@@ -10,7 +10,7 @@
 
 use crate::ai::{
     AiError, AiProvider, DistillRequest, DistilledNote, GeneratedCard, ProviderId, SchemeEntry,
-    TopicMatch,
+    TopicMatch, TopicPreview,
 };
 use crate::{ai, prompts};
 use std::time::Duration;
@@ -191,18 +191,34 @@ impl Chat<'_> {
 
     /// Gemini's generateContent, which takes the key in a header and wraps the
     /// system prompt in its own field.
-    fn gemini(&self, system: &str, user: &str) -> std::result::Result<String, AiError> {
+    /// `search` turns on Gemini's search grounding. That cannot be combined
+    /// with a forced JSON mime type, so the config is built without one when
+    /// searching and `extract_json` copes with the prose that comes back.
+    fn gemini_with(
+        &self,
+        system: &str,
+        user: &str,
+        search: bool,
+    ) -> std::result::Result<String, AiError> {
         let url = format!(
             "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent",
             self.model
         );
+        let generation_config = if search {
+            serde_json::json!({ "temperature": 0.2 })
+        } else {
+            serde_json::json!({ "temperature": 0.2, "responseMimeType": "application/json" })
+        };
+        let tools = if search {
+            serde_json::json!([{ "google_search": {} }])
+        } else {
+            serde_json::json!([])
+        };
         let body = serde_json::json!({
             "systemInstruction": {"parts": [{"text": system}]},
             "contents": [{"role": "user", "parts": [{"text": user}]}],
-            "generationConfig": {
-                "temperature": 0.2,
-                "responseMimeType": "application/json",
-            },
+            "generationConfig": generation_config,
+            "tools": tools,
         });
         let headers = vec![
             ("x-goog-api-key".to_string(), self.api_key.to_string()),
@@ -273,6 +289,17 @@ impl<'a> Provider<'a> {
     }
 
     fn chat(&self, system: &str, user: &str) -> std::result::Result<String, AiError> {
+        self.chat_maybe_search(system, user, false)
+    }
+
+    /// Only Gemini can ground in a search; the others answer from the model
+    /// alone, which is still better than refusing.
+    fn chat_maybe_search(
+        &self,
+        system: &str,
+        user: &str,
+        search: bool,
+    ) -> std::result::Result<String, AiError> {
         if self.api_key.trim().is_empty() {
             return Err(AiError::Auth("no API key has been set".into()));
         }
@@ -282,7 +309,7 @@ impl<'a> Provider<'a> {
             model: &self.model,
         };
         match self.id {
-            ProviderId::Gemini => chat.gemini(system, user),
+            ProviderId::Gemini => chat.gemini_with(system, user, search),
             ProviderId::Groq => chat.openai_style(
                 "https://api.groq.com/openai/v1/chat/completions",
                 system,
@@ -383,6 +410,21 @@ impl AiProvider for Provider<'_> {
             ));
         }
         Ok(entries)
+    }
+
+    fn preview_next(
+        &self,
+        subject: &str,
+        recent_topics: &[String],
+        next_topic: Option<&str>,
+        with_search: bool,
+    ) -> std::result::Result<TopicPreview, AiError> {
+        let raw = self.chat_maybe_search(
+            prompts::PREVIEW_SYSTEM,
+            &prompts::preview_user(subject, recent_topics, next_topic),
+            with_search,
+        )?;
+        ai::parse_preview(&raw).map_err(|e| AiError::BadResponse(e.to_string()))
     }
 
     fn explain(

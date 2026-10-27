@@ -756,3 +756,262 @@ fn material_status_and_duplicate_detection() {
     assert_eq!(cold.as_deref(), Some("abc123.sbc"));
     assert!(library::material_get(&db, material.id).is_err());
 }
+
+// ---- Phase 4: previews and exam mode ------------------------------------
+
+use studybites_core::ai::TopicPreview;
+use studybites_core::preview;
+
+#[test]
+fn the_next_topic_comes_from_the_outline_without_an_ai_call() {
+    let mut db = db();
+    let subject = subjects::create(&db, "MTH 101").unwrap();
+    let mut ids = Vec::new();
+    for title in ["Sets", "Logarithms", "Matrices"] {
+        ids.push(
+            topics::create(
+                &db,
+                &NewTopic {
+                    subject_id: subject.id,
+                    title: title.into(),
+                    ..Default::default()
+                },
+            )
+            .unwrap()
+            .id,
+        );
+    }
+    let embedder = LexicalEmbedder;
+
+    // Nothing covered yet: no offer, because a preview of topic 1 is noise.
+    assert!(preview::next_topic(&db, subject.id).unwrap().is_none());
+
+    // Cover "Sets" with real material.
+    let content = DistilledNote {
+        title: "Sets".into(),
+        key_ideas: ["A set has no duplicates".to_string()].into(),
+        ..Default::default()
+    };
+    library::note_create(
+        &db,
+        None,
+        Some(ids[0]),
+        &content,
+        &embedder.embed("sets"),
+        false,
+    )
+    .unwrap();
+
+    let offer = preview::next_topic(&db, subject.id)
+        .unwrap()
+        .expect("an offer");
+    assert_eq!(
+        offer.title, "Logarithms",
+        "the next uncovered topic in order"
+    );
+    assert!(offer.from_scheme, "no web search is needed with an outline");
+    assert!(!offer.already_prepared);
+
+    // Store a preview for it, then the offer says so rather than repeating.
+    let generated = TopicPreview {
+        title: "Logarithms".into(),
+        key_ideas: ["log(ab) = log a + log b".to_string()].into(),
+        cards: vec![GeneratedCard::Flash {
+            front: "What is log(ab)?".into(),
+            back: "log a + log b".into(),
+        }],
+        confidence: 0.8,
+    };
+    let added = preview::save_preview(&mut db, Some(ids[1]), &generated, &embedder).unwrap();
+    assert_eq!(added, 1);
+
+    let again = preview::next_topic(&db, subject.id).unwrap().unwrap();
+    assert!(
+        again.already_prepared,
+        "do not offer the same preview twice"
+    );
+}
+
+#[test]
+fn preview_material_is_labelled_and_never_outranks_real_cards() {
+    let mut db = db();
+    let subject = subjects::create(&db, "MTH 101").unwrap();
+    let topic = topics::create(
+        &db,
+        &NewTopic {
+            subject_id: subject.id,
+            title: "Logarithms".into(),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let embedder = LexicalEmbedder;
+
+    // A preview first, then real material for the same topic.
+    let generated = TopicPreview {
+        title: "Logarithms".into(),
+        key_ideas: ["Logs invert exponentiation".to_string()].into(),
+        cards: vec![GeneratedCard::Flash {
+            front: "Preview card".into(),
+            back: "From the AI".into(),
+        }],
+        confidence: 0.9,
+    };
+    preview::save_preview(&mut db, Some(topic.id), &generated, &embedder).unwrap();
+
+    // The stored note carries the label in its own title.
+    let note = library::note_get(&db, 1).unwrap();
+    assert!(note.is_preview);
+    assert!(note.content.title.contains("AI preview"));
+
+    let real = DistilledNote {
+        title: "Laws of logarithms".into(),
+        key_ideas: ["log(ab) = log a + log b".to_string()].into(),
+        ..Default::default()
+    };
+    let real_note = library::note_create(
+        &db,
+        None,
+        Some(topic.id),
+        &real,
+        &embedder.embed("logs"),
+        false,
+    )
+    .unwrap();
+    library::cards_create(
+        &mut db,
+        real_note.id,
+        Some(topic.id),
+        &[GeneratedCard::Flash {
+            front: "Real card".into(),
+            back: "From class".into(),
+        }],
+        false,
+    )
+    .unwrap();
+
+    // Before retirement, real cards still sort ahead of preview ones.
+    let session = study::start_session(&mut db, Some(subject.id), 10, 10).unwrap();
+    assert!(
+        !session.cards[0].card.is_preview,
+        "a preview card must never come before real material"
+    );
+}
+
+#[test]
+fn uploading_real_notes_retires_the_preview_for_that_topic() {
+    let mut db = db();
+    let subject = subjects::create(&db, "MTH 101").unwrap();
+    let topic = topics::create(
+        &db,
+        &NewTopic {
+            subject_id: subject.id,
+            title: "Logarithms".into(),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let embedder = LexicalEmbedder;
+
+    let generated = TopicPreview {
+        title: "Logarithms".into(),
+        key_ideas: ["Logs invert exponentiation".to_string()].into(),
+        cards: vec![
+            GeneratedCard::Flash {
+                front: "Preview one".into(),
+                back: "A".into(),
+            },
+            GeneratedCard::Flash {
+                front: "Preview two".into(),
+                back: "B".into(),
+            },
+        ],
+        confidence: 0.9,
+    };
+    preview::save_preview(&mut db, Some(topic.id), &generated, &embedder).unwrap();
+    assert_eq!(study::due_counts(&db, Some(subject.id)).unwrap().new, 2);
+
+    // Real material lands on the topic: the preview cards step aside.
+    let retired = preview::retire_previews_for_topic(&db, topic.id).unwrap();
+    assert_eq!(retired, 2);
+    assert_eq!(
+        study::due_counts(&db, Some(subject.id)).unwrap().new,
+        0,
+        "retired previews leave the study rotation"
+    );
+
+    // Retired, not deleted — the review history stays intact.
+    let still_there: i64 = db
+        .conn()
+        .query_row("SELECT count(*) FROM cards WHERE retired = 1", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert_eq!(still_there, 2);
+}
+
+#[test]
+fn exam_mode_turns_on_only_inside_the_window() {
+    let db = db();
+    let subject = subjects::create(&db, "MTH 101").unwrap();
+
+    assert!(!preview::exam_mode(&db, Some(subject.id)).unwrap());
+    assert!(preview::days_until_exam(&db, subject.id).unwrap().is_none());
+
+    // An exam far away does not change how sessions are built.
+    let far: String = db
+        .conn()
+        .query_row("SELECT date('now','+90 days')", [], |r| r.get(0))
+        .unwrap();
+    subjects::set_exam_date(&db, subject.id, Some(&far)).unwrap();
+    assert!(!preview::exam_mode(&db, Some(subject.id)).unwrap());
+
+    // One week out, it does.
+    let soon: String = db
+        .conn()
+        .query_row("SELECT date('now','+7 days')", [], |r| r.get(0))
+        .unwrap();
+    subjects::set_exam_date(&db, subject.id, Some(&soon)).unwrap();
+    assert!(preview::exam_mode(&db, Some(subject.id)).unwrap());
+    let days = preview::days_until_exam(&db, subject.id).unwrap().unwrap();
+    assert!((6.0..=8.0).contains(&days), "about a week, got {days}");
+
+    // A date already past stops mattering.
+    let gone: String = db
+        .conn()
+        .query_row("SELECT date('now','-2 days')", [], |r| r.get(0))
+        .unwrap();
+    subjects::set_exam_date(&db, subject.id, Some(&gone)).unwrap();
+    assert!(!preview::exam_mode(&db, Some(subject.id)).unwrap());
+
+    // Unsetting works, and nonsense is refused.
+    let cleared = subjects::set_exam_date(&db, subject.id, None).unwrap();
+    assert!(cleared.exam_date.is_none());
+    assert!(subjects::set_exam_date(&db, subject.id, Some("next tuesday")).is_err());
+}
+
+#[test]
+fn a_preview_is_kept_small_and_validated() {
+    // Six ideas and five cards come back; the cap holds.
+    let raw = r#"{
+        "title": "  Matrices  ",
+        "keyIdeas": ["one","two","three","four","five","six"," "],
+        "cards": [
+            {"kind":"flash","front":"a","back":"b"},
+            {"kind":"flash","front":"c","back":"d"},
+            {"kind":"flash","front":"e","back":"f"},
+            {"kind":"flash","front":"g","back":"h"},
+            {"kind":"mcq","question":"bad","options":["a","b"],"answer":0}
+        ],
+        "confidence": 1.7
+    }"#;
+    let parsed = studybites_core::ai::parse_preview(raw).unwrap();
+    assert_eq!(parsed.title, "Matrices");
+    assert_eq!(parsed.key_ideas.len(), 5, "at most five ideas");
+    assert_eq!(parsed.cards.len(), 3, "at most three cards");
+    assert_eq!(parsed.confidence, 1.0, "confidence is clamped");
+    assert!(parsed.as_note().title.contains("AI preview"));
+
+    // Nothing usable is an error, not an empty preview.
+    assert!(studybites_core::ai::parse_preview(r#"{"title":"X","keyIdeas":[]}"#).is_err());
+}

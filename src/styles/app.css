@@ -560,3 +560,22 @@ select.input { cursor: pointer; }
   .scheme__row { flex-wrap: wrap; }
   .scheme__fields { flex: 1 1 100%; }
 }
+
+/* ---- next-class offer ------------------------------------------------ */
+
+/* Quiet by design: an invitation on the summary screen, not a demand. */
+.offer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s-2);
+  padding: var(--s-5);
+  margin-top: var(--s-3);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  max-width: 420px;
+  text-align: center;
+}
+.offer__text { font-size: var(--fs-md); }
+.offer .row { margin-top: var(--s-2); }

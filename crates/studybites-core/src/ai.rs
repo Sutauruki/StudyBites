@@ -355,6 +355,68 @@ pub struct TopicMatch {
     pub reason: String,
 }
 
+/// A small head start on a topic not yet taught (Brief 3.7).
+///
+/// Deliberately tiny: 3-5 ideas and 2-3 cards. A preview that grew into a
+/// lesson would compete with the real class material it stands in for.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct TopicPreview {
+    pub title: String,
+    #[serde(default)]
+    pub key_ideas: Vec<String>,
+    #[serde(default)]
+    pub cards: Vec<GeneratedCard>,
+    /// The model's own confidence that this is what comes next.
+    #[serde(default)]
+    pub confidence: f32,
+}
+
+impl TopicPreview {
+    /// The stored form. Marked in the title too, so the label survives even
+    /// where only the note text is shown.
+    pub fn as_note(&self) -> DistilledNote {
+        DistilledNote {
+            title: format!("{} (AI preview)", self.title.trim()),
+            key_ideas: self.key_ideas.clone(),
+            ..Default::default()
+        }
+    }
+
+    pub fn validate(mut self) -> Result<Self> {
+        self.title = self.title.trim().to_string();
+        if self.title.is_empty() {
+            return Err(CoreError::Invalid("the preview has no topic".into()));
+        }
+        self.key_ideas = self
+            .key_ideas
+            .into_iter()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .take(5)
+            .collect();
+        if self.key_ideas.is_empty() {
+            return Err(CoreError::Invalid("the preview has no key ideas".into()));
+        }
+        // Stays small whatever the model returned.
+        self.cards = self.cards.into_iter().take(3).collect();
+        self.confidence = self.confidence.clamp(0.0, 1.0);
+        Ok(self)
+    }
+}
+
+/// Parse a preview, keeping only the cards that validate.
+pub fn parse_preview(raw: &str) -> Result<TopicPreview> {
+    let value = extract_json(raw)?;
+    let mut preview: TopicPreview = serde_json::from_value(value)?;
+    preview.cards = preview
+        .cards
+        .into_iter()
+        .filter_map(|c| c.validate().ok())
+        .collect();
+    preview.validate()
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SchemeEntry {
@@ -387,6 +449,19 @@ pub trait AiProvider {
 
     /// Turn a scheme-of-work document into an ordered outline (Brief 3.2).
     fn parse_scheme(&self, text: &str) -> std::result::Result<Vec<SchemeEntry>, AiError>;
+
+    /// A small preview of a topic not yet taught (Brief 3.7).
+    ///
+    /// `with_search` asks the provider to ground the answer in a web search,
+    /// which the caller only sets when the model reported low confidence —
+    /// searching every time would burn the free quota for nothing.
+    fn preview_next(
+        &self,
+        subject: &str,
+        recent_topics: &[String],
+        next_topic: Option<&str>,
+        with_search: bool,
+    ) -> std::result::Result<TopicPreview, AiError>;
 
     /// A short explanation grounded in the supplied notes (Brief 3.8).
     fn explain(

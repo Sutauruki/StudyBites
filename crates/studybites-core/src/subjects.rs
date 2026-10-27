@@ -115,3 +115,39 @@ pub fn delete(db: &Db, id: i64) -> Result<()> {
 fn is_unique_violation(err: &rusqlite::Error) -> bool {
     matches!(err, rusqlite::Error::SqliteFailure(e, _) if e.extended_code == 2067)
 }
+
+/// Set the exam date for a subject, or unset it with `None` (Brief 3.9).
+///
+/// Stored as `YYYY-MM-DD`; anything SQLite cannot read as a date is refused
+/// rather than silently producing arithmetic nobody intended.
+pub fn set_exam_date(db: &Db, id: i64, exam_date: Option<&str>) -> Result<Subject> {
+    let cleaned = match exam_date.map(str::trim).filter(|d| !d.is_empty()) {
+        Some(date) => {
+            let valid: Option<String> = db
+                .conn()
+                .query_row("SELECT date(?1)", [date], |r| r.get(0))
+                .unwrap_or(None);
+            match valid {
+                Some(d) => Some(d),
+                None => {
+                    return Err(CoreError::Invalid(
+                        "that is not a date StudyBites understands".into(),
+                    ))
+                }
+            }
+        }
+        None => None,
+    };
+
+    let changed = db.conn().execute(
+        "UPDATE subjects SET exam_date = ?2 WHERE id = ?1",
+        (id, cleaned.as_deref()),
+    )?;
+    if changed == 0 {
+        return Err(CoreError::NotFound {
+            kind: "subject",
+            id,
+        });
+    }
+    get(db, id)
+}

@@ -123,6 +123,11 @@ pub fn accept_upload(
         )?;
     }
 
+    // Real notes supersede any preview for this topic (Brief 3.7).
+    if let Some(topic_id) = topic_id {
+        crate::preview::retire_previews_for_topic(db, topic_id)?;
+    }
+
     let material = library::material_set_status(db, material.id, library::STATUS_QUEUED, None)?;
     Ok(Accepted {
         material,

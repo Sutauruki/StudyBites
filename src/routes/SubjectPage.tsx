@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 import {
   backend,
   errorText,
+  type ExamStatus,
   type ExplainResult,
   type Material,
   type Subject,
@@ -105,6 +106,8 @@ export function SubjectPage({
         onError={setError}
         onStudy={onStudy}
       />
+
+      <ExamSection subject={subject} onChanged={refresh} onError={setError} />
 
       <MasterySection mastery={mastery} />
 
@@ -579,5 +582,86 @@ function ExplainSection({ subjectId }: { subjectId: number }) {
         )}
       </div>
     </div>
+  );
+}
+
+
+/**
+ * Exam date and what it changes (Brief 3.9).
+ *
+ * Inside three weeks the session mix shifts toward weak topics. The app says
+ * so plainly rather than quietly reordering things behind the student's back.
+ */
+function ExamSection({
+  subject,
+  onChanged,
+  onError,
+}: {
+  subject: Subject | null;
+  onChanged: () => void;
+  onError: (message: string) => void;
+}) {
+  const [status, setStatus] = useState<ExamStatus | null>(null);
+
+  useEffect(() => {
+    if (!subject) return;
+    void backend
+      .examStatus(subject.id)
+      .then(setStatus)
+      .catch(() => setStatus(null));
+  }, [subject]);
+
+  if (!subject) return null;
+  const days = status?.daysUntil ?? null;
+
+  return (
+    <section>
+      <h2>Exam</h2>
+      <div className="card card--pad">
+        <div className="row row--wrap">
+          <input
+            className="input"
+            type="date"
+            style={{ maxWidth: "200px" }}
+            value={subject.examDate ?? ""}
+            aria-label="Exam date"
+            onChange={async (e) => {
+              try {
+                await backend.examDateSet(subject.id, e.target.value || null);
+                onChanged();
+              } catch (err) {
+                onError(errorText(err));
+              }
+            }}
+          />
+          {subject.examDate && (
+            <button
+              className="btn btn--ghost"
+              onClick={async () => {
+                try {
+                  await backend.examDateSet(subject.id, null);
+                  onChanged();
+                } catch (err) {
+                  onError(errorText(err));
+                }
+              }}
+            >
+              Clear
+            </button>
+          )}
+          {status?.examMode && <span className="chip chip--accent">Exam mode on</span>}
+        </div>
+
+        <p className="muted" style={{ marginTop: "var(--s-3)" }}>
+          {days === null
+            ? "Set a date and, in the last three weeks, sessions lean toward the topics you know least well."
+            : days < 0
+              ? "That date has passed. Sessions are back to their usual mix."
+              : status?.examMode
+                ? `${Math.ceil(days)} day${Math.ceil(days) === 1 ? "" : "s"} to go — sessions are favouring your weakest topics.`
+                : `${Math.ceil(days)} days to go. The mix shifts in the last three weeks.`}
+        </p>
+      </div>
+    </section>
   );
 }

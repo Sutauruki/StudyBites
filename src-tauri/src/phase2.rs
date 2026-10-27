@@ -10,7 +10,10 @@ use std::sync::MutexGuard;
 use studybites_core::ai::{AiProvider, ProviderId, SchemeEntry, TopicMatch};
 use studybites_core::embed::{Embedder, LexicalEmbedder};
 use studybites_core::providers::{Attempt, Http, Provider, UreqGetHttp, UreqHttp};
-use studybites_core::{files, ingest, jobs, library, quota, study, update, Db, Rating, Topic};
+use studybites_core::{
+    files, ingest, jobs, library, preview, quota, study, subjects, update, Db, Rating, Subject,
+    Topic,
+};
 use tauri::{Emitter, State};
 
 type Ipc<T> = Result<T, String>;
@@ -312,6 +315,95 @@ pub fn session_end(state: State<AppState>, session_id: i64) -> Ipc<study::Sessio
 pub fn mastery(state: State<AppState>, subject_id: i64) -> Ipc<Vec<study::TopicMastery>> {
     let db = lock(&state)?;
     study::mastery_for_subject(&db, subject_id).map_err(to_ipc)
+}
+
+// ---- previews and exam mode (Brief 3.7, 3.9) ----------------------------
+
+/// Is there a next topic worth offering a head start on?
+///
+/// Costs nothing: with a scheme of work this is a lookup, and with none it
+/// simply declines rather than spending a request to guess.
+#[tauri::command]
+pub fn preview_offer(
+    state: State<AppState>,
+    subject_id: i64,
+) -> Ipc<Option<preview::PreviewOffer>> {
+    let db = lock(&state)?;
+    preview::next_topic(&db, subject_id).map_err(to_ipc)
+}
+
+/// Generate and store a labelled preview of the next topic.
+///
+/// Only called when the student accepts the offer — previews are offered,
+/// never forced.
+#[tauri::command]
+pub async fn preview_generate(
+    state: State<'_, AppState>,
+    subject_id: i64,
+    topic_id: Option<i64>,
+    topic_title: Option<String>,
+) -> Ipc<usize> {
+    let (subject, recent) = {
+        let db = lock(&state)?;
+        (
+            subjects::get(&db, subject_id).map_err(to_ipc)?,
+            preview::recent_topics(&db, subject_id).map_err(to_ipc)?,
+        )
+    };
+
+    let http = UreqHttp;
+    let list = require_providers(&http)?;
+    let available = available_ids(&state, &list)?;
+
+    let (_, generated) =
+        studybites_core::providers::route(&list, &|id| available.contains(&id), |p| {
+            p.preview_next(&subject.name, &recent, topic_title.as_deref(), false)
+        })
+        .map_err(describe_attempts)?;
+
+    // Only pay for a web search when the model says it is guessing
+    // (Brief 3.7), and only when there was no outline to go on.
+    let generated = if generated.confidence < 0.5 && topic_title.is_none() {
+        studybites_core::providers::route(&list, &|id| available.contains(&id), |p| {
+            p.preview_next(&subject.name, &recent, topic_title.as_deref(), true)
+        })
+        .map(|(_, better)| better)
+        .unwrap_or(generated)
+    } else {
+        generated
+    };
+
+    let embedder = LexicalEmbedder;
+    let mut db = lock(&state)?;
+    preview::save_preview(&mut db, topic_id, &generated, &embedder).map_err(to_ipc)
+}
+
+/// Set or unset a subject's exam date (Brief 3.9).
+#[tauri::command]
+pub fn exam_date_set(
+    state: State<AppState>,
+    subject_id: i64,
+    exam_date: Option<String>,
+) -> Ipc<Subject> {
+    let db = lock(&state)?;
+    subjects::set_exam_date(&db, subject_id, exam_date.as_deref()).map_err(to_ipc)
+}
+
+/// Days until the exam, and whether the session mix has shifted for it.
+#[tauri::command]
+pub fn exam_status(state: State<AppState>, subject_id: i64) -> Ipc<ExamStatus> {
+    let db = lock(&state)?;
+    Ok(ExamStatus {
+        days_until: preview::days_until_exam(&db, subject_id).map_err(to_ipc)?,
+        exam_mode: preview::exam_mode(&db, Some(subject_id)).map_err(to_ipc)?,
+    })
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExamStatus {
+    pub days_until: Option<f64>,
+    pub exam_mode: bool,
 }
 
 // ---- queue and quota ----------------------------------------------------
