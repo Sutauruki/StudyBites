@@ -531,3 +531,255 @@ select.input { cursor: pointer; }
 
 /* Pushes whatever follows to the end of a flex row. */
 .spacer { flex: 1; }
+
+/* ======================================================================
+   Composition
+   ----------------------------------------------------------------------
+   The brief calls for one main thing per screen. That means a screen is
+   not a stack of equal cards: it has a statement, an action, and
+   everything else held quiet beneath them.
+
+   Two rules do most of the work here:
+   1. Boxes are earned. A border is for something genuinely contained —
+      a modal, a study card, a row you can act on. Sections are separated
+      by space and type, not by drawing a rectangle around each one.
+   2. One voice is loud. Each screen gets a single display line in the
+      reading serif; everything else steps well back.
+   ====================================================================== */
+
+/* The statement: one line per screen, set in the reading serif. */
+.display {
+  font-family: var(--font-read);
+  font-size: var(--fs-display);
+  line-height: 1.12;
+  letter-spacing: -0.015em;
+  font-weight: 400;
+  text-wrap: balance;
+  max-width: 20ch;
+}
+
+.display em {
+  font-style: normal;
+  color: var(--accent);
+}
+
+/* Quiet editorial label, for section headings that must not compete. */
+.label {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+/* A hairline instead of a box, where two things merely need separating. */
+.rule {
+  height: 1px;
+  background: var(--border);
+  border: 0;
+  margin: 0;
+}
+
+/* Sections breathe rather than sit in frames. */
+.content { gap: var(--s-8); }
+.content > section { gap: var(--s-4); }
+
+/* The opening block sits lower on the page, so a screen does not begin
+   flush against the chrome. */
+.lede { padding-top: clamp(var(--s-4), 4vh, var(--s-7)); display: flex; flex-direction: column; gap: var(--s-5); }
+
+/* Primary action: one per screen, and it should look like the answer to
+   the statement above it. */
+.action { display: flex; align-items: center; gap: var(--s-4); flex-wrap: wrap; }
+
+/* Inline choices under the action — a quiet alternative to a form field. */
+.choices { display: flex; align-items: baseline; gap: var(--s-3); flex-wrap: wrap; font-size: var(--fs-sm); }
+.choice {
+  font: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--text-faint);
+  cursor: pointer;
+  border-bottom: 1px solid transparent;
+  transition: color var(--t-fast), border-color var(--t-fast);
+}
+.choice:hover { color: var(--text-muted); }
+.choice[aria-pressed="true"] {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+/* Lists lose their frame: rules between rows are enough. */
+.card.list { border: 0; border-radius: 0; box-shadow: none; background: none; }
+.card.list .list__item { padding-left: 0; padding-right: var(--s-3); }
+.card.list .list__item:hover { background: none; }
+.card.list .list__item:hover .list__title { color: var(--accent); }
+
+/* Tiles: no shadow, a hairline, and the name doing the work. */
+.tile { box-shadow: none; background: none; }
+.tile:hover { background: var(--surface); }
+.tile__title { font-family: var(--font-read); font-weight: 400; font-size: var(--fs-xl); letter-spacing: 0; }
+
+/* Panels that really are contained keep their surface, but lose the
+   competing shadow. */
+.card--pad { box-shadow: none; }
+
+/* The study card floats on the page rather than sitting in a tray: the
+   screen is the card, so a border around it is one frame too many. */
+.study__card {
+  background: none;
+  border: 0;
+  box-shadow: none;
+  min-height: 52vh;
+}
+.study__answer { border-top-color: var(--border-strong); }
+
+.study__grades .btn {
+  background: none;
+  border-color: var(--border);
+}
+.study__grades .btn:hover:not(:disabled) { background: var(--surface); border-color: var(--border-strong); }
+
+/* Sidebar steps back: a hairline, not a slab of colour. */
+.sidebar { background: none; gap: var(--s-6); padding: var(--s-6) var(--s-4); }
+.sidebar__brand { font-size: var(--fs-md); opacity: 0.85; }
+.sidebar__brand:hover { opacity: 1; }
+.sidebar__link[aria-current="page"] { background: var(--surface-2); box-shadow: none; }
+
+@media (max-width: 860px) {
+  .sidebar { gap: var(--s-2); padding: var(--s-2) var(--s-4); background: var(--surface-2); }
+  .display { font-size: var(--fs-2xl); max-width: none; }
+  .content { gap: var(--s-6); }
+}
+
+/* ======================================================================
+   Outline
+   ----------------------------------------------------------------------
+   Thirteen topics with subtopics was pages of scrolling, because every
+   topic was a tall row carrying a title, a meta line and five always-on
+   buttons.
+
+   So: one line per topic, subtopics folded away behind a +/- toggle, and
+   the actions hidden until the row is hovered or focused. No container
+   box — a hairline between rows is enough separation. A full scheme of
+   work now fits on one screen.
+   ====================================================================== */
+
+.outline { display: flex; flex-direction: column; }
+
+.outline__item { border-bottom: 1px solid var(--border); }
+.outline__item:last-child { border-bottom: none; }
+
+.outline__row {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-height: 38px;
+  padding: var(--s-1) 0;
+}
+.outline__row:hover .outline__actions,
+.outline__row:focus-within .outline__actions { opacity: 1; pointer-events: auto; }
+
+/* Sharp +/- rather than a chevron: it reads as "there is more inside". */
+.outline__toggle {
+  flex: 0 0 22px;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  line-height: 1;
+  color: var(--text-faint);
+  background: none;
+  border: 0;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.outline__toggle:hover { color: var(--text); background: var(--surface-2); }
+.outline__toggle--empty { visibility: hidden; cursor: default; }
+
+.outline__week {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--text-faint);
+  min-width: 2.4em;
+}
+
+.outline__title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-sm);
+}
+.outline__item--child .outline__title { color: var(--text-muted); }
+
+.outline__count {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--text-faint);
+}
+
+/* Actions stay out of the way until you reach for them. Keyboard users
+   get them via :focus-within, so nothing is hidden from the tab order. */
+.outline__actions {
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--t-fast);
+}
+.outline__actions .btn {
+  min-height: 26px;
+  padding: 0 var(--s-2);
+  font-size: var(--fs-xs);
+  border-color: transparent;
+  background: none;
+}
+.outline__actions .btn:hover:not(:disabled) { background: var(--surface-2); }
+
+.outline__children { padding-left: var(--s-6); }
+.outline__children .outline__item { border-bottom: 0; }
+.outline__children .outline__row { min-height: 32px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .outline__actions { opacity: 1; pointer-events: auto; }
+}
+
+/* ---- craft details --------------------------------------------------- */
+
+/* Keystrokes as physical keys, not parenthetical text. */
+kbd {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: 1;
+  padding: 3px 5px;
+  color: var(--text-muted);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+/* Figures line up: counts, clocks, weeks. */
+.study__clock, .sidebar__count, .mastery__label span:last-child {
+  font-family: var(--font-mono);
+}
+
+/* Badges: small, spaced, washed out. Colour is a scarce resource. */
+.chip {
+  font-size: 0.6875rem;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  padding: 2px var(--s-2);
+}
+
+/* Buttons press rather than glow. */
+.btn:active:not(:disabled) { transform: scale(0.985); }
+.btn { border-radius: var(--radius-sm); }
+
+/* Tighter editorial tracking on the one large line per screen. */
+.display { letter-spacing: -0.025em; }

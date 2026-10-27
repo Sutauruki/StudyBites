@@ -27,9 +27,9 @@ export function SubjectsPage({ onOpen }: { onOpen: (id: number) => void }) {
 
   return (
     <>
-      <div className="page-head">
+      <div className="page-head lede">
         <div className="page-head__text">
-          <h1>Your subjects</h1>
+          <h1 className="display">Your subjects</h1>
           <p className="page-head__sub">
             {subjects === null
               ? "Loading…"

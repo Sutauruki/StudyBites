@@ -71,45 +71,92 @@ export function HomePage({
 
   const paused = queue?.counts.paused ?? 0;
   const failed = queue?.counts.failed ?? 0;
-  const nothingToStudy = (counts?.due ?? 0) + (counts?.new ?? 0) === 0;
+  const waiting = (counts?.due ?? 0) + (counts?.new ?? 0);
+  const subjectName = subjectId === null ? null : subjects.find((s) => s.id === subjectId)?.name;
+
+  // One line that says where you stand. The app is a nightly ritual, so
+  // this is the whole point of the screen; everything else is quieter.
+  const statement =
+    counts === null
+      ? "…"
+      : waiting === 0
+        ? "Nothing due right now."
+        : counts.due > 0 && counts.new > 0
+          ? `${counts.due} to review, ${counts.new} new.`
+          : counts.due > 0
+            ? `${counts.due} card${counts.due === 1 ? "" : "s"} to review.`
+            : `${counts.new} new card${counts.new === 1 ? "" : "s"} waiting.`;
 
   return (
     <>
-      <div className="page-head">
-        <div className="page-head__text">
-          <h1>Ready for a bite?</h1>
-          <p className="page-head__sub">
-            {counts === null
-              ? "…"
-              : nothingToStudy
-                ? "Nothing due right now."
-                : [
-                    counts.due > 0 ? `${counts.due} due` : null,
-                    counts.new > 0 ? `${counts.new} new` : null,
-                  ]
-                    .filter(Boolean)
-                    .join(" · ")}
-          </p>
+      <div className="lede">
+        <h1 className="display">{statement}</h1>
+
+        <div className="action">
+          <button
+            className="btn btn--primary btn--big"
+            onClick={() => onStart(subjectId, minutes)}
+            disabled={waiting === 0}
+          >
+            Start a {minutes}-minute bite
+          </button>
         </div>
+
+        <div className="choices">
+          {LENGTHS.map((length) => (
+            <button
+              key={length}
+              className="choice"
+              aria-pressed={minutes === length}
+              onClick={() => setMinutes(length)}
+            >
+              {length} min
+            </button>
+          ))}
+          <span className="muted" aria-hidden="true">
+            ·
+          </span>
+          <select
+            className="choice"
+            value={subjectId ?? ""}
+            aria-label="Subject to study"
+            onChange={(e) => setSubjectId(e.target.value === "" ? null : Number(e.target.value))}
+          >
+            <option value="">everything</option>
+            {subjects.map((subject) => (
+              <option key={subject.id} value={subject.id}>
+                {subject.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {waiting === 0 && (
+          <p className="muted">
+            {subjectName
+              ? `Nothing waiting in ${subjectName}. Add class material to it, or study everything.`
+              : "Add today's notes to a subject and they will turn up here as cards."}
+          </p>
+        )}
       </div>
 
       {error && <Banner kind="error">{error}</Banner>}
 
       {working > 0 && (
-        <div className="stack">
+        <section>
           <div className="spinner" />
           <p className="muted">
-            Processing {working} section{working === 1 ? "" : "s"} of your material in the
-            background. You can study while it works.
+            Reading {working} section{working === 1 ? "" : "s"} of your material. You can study
+            while it works.
           </p>
-        </div>
+        </section>
       )}
 
       {paused > 0 && (
         <Banner kind="info">
-          Daily AI limit reached — processing resumes automatically after it resets
+          Daily AI limit reached — this picks up again after it resets
           {queue?.resumesAt ? ` (${new Date(queue.resumesAt).toLocaleString()})` : ""}. Studying
-          keeps working offline.
+          works offline meanwhile.
         </Banner>
       )}
 
@@ -117,7 +164,7 @@ export function HomePage({
         <Banner kind="error">
           {failed} section{failed === 1 ? "" : "s"} could not be processed.{" "}
           <button
-            className="btn btn--ghost"
+            className="link"
             onClick={async () => {
               try {
                 await backend.queueRetry();
@@ -132,55 +179,8 @@ export function HomePage({
         </Banner>
       )}
 
-      <div className="bite">
-        <div className="field">
-          <span className="field__label">Subject</span>
-          <select
-            className="input"
-            value={subjectId ?? ""}
-            onChange={(e) => setSubjectId(e.target.value === "" ? null : Number(e.target.value))}
-          >
-            <option value="">Everything</option>
-            {subjects.map((subject) => (
-              <option key={subject.id} value={subject.id}>
-                {subject.name}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="field">
-          <span className="field__label">How long?</span>
-          <div className="segmented">
-            {LENGTHS.map((length) => (
-              <button
-                key={length}
-                className="btn"
-                aria-pressed={minutes === length}
-                onClick={() => setMinutes(length)}
-              >
-                {length} min
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <button
-          className="btn btn--primary btn--big"
-          onClick={() => onStart(subjectId, minutes)}
-          disabled={nothingToStudy}
-        >
-          Start a bite
-        </button>
-        {nothingToStudy && (
-          <p className="muted">
-            Add some class material to a subject and it will appear here as cards.
-          </p>
-        )}
-      </div>
-
       <section>
-        <h2>Your subjects</h2>
+        <span className="label">Subjects</span>
         <div className="grid">
           {subjects.map((subject) => (
             <button key={subject.id} className="tile" onClick={() => onOpenSubject(subject.id)}>
