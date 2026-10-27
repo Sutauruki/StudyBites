@@ -171,7 +171,7 @@ export function StudyPage({
           {current.isNew ? " · new" : ""}
           {current.topicTitle ? ` · ${current.topicTitle}` : ""}
         </span>
-        <span className="topbar__spacer" />
+        <span className="spacer" />
         <span className="study__clock" aria-label="time left">
           {clock}
         </span>

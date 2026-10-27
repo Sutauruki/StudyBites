@@ -179,21 +179,21 @@ export function HomePage({
         )}
       </div>
 
-      <div className="card list">
-        {subjects.map((subject) => (
-          <button key={subject.id} className="list__item" onClick={() => onOpenSubject(subject.id)}>
-            <div className="list__text">
-              <div className="list__title">{subject.name}</div>
-              <div className="list__meta">
+      <section>
+        <h2>Your subjects</h2>
+        <div className="grid">
+          {subjects.map((subject) => (
+            <button key={subject.id} className="tile" onClick={() => onOpenSubject(subject.id)}>
+              <span className="tile__title">{subject.name}</span>
+              <span className="muted">
                 {subject.topicCount === 0
                   ? "No topics yet"
                   : `${subject.topicCount} topic${subject.topicCount === 1 ? "" : "s"}`}
-              </div>
-            </div>
-            <span className="muted">›</span>
-          </button>
-        ))}
-      </div>
+              </span>
+            </button>
+          ))}
+        </div>
+      </section>
     </>
   );
 }
