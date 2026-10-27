@@ -15,6 +15,7 @@ pub mod jobs;
 pub mod library;
 pub mod migrations;
 pub mod models;
+pub mod preview;
 pub mod prompts;
 pub mod providers;
 pub mod quota;

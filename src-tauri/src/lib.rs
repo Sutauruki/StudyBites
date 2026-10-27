@@ -63,6 +63,11 @@ pub fn run() {
             phase2::github_token_set,
             phase2::github_token_present,
             phase2::update_check,
+            // Phase 4
+            phase2::preview_offer,
+            phase2::preview_generate,
+            phase2::exam_date_set,
+            phase2::exam_status,
         ])
         .run(tauri::generate_context!())
         .expect("error while running StudyBites");

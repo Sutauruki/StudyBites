@@ -88,9 +88,13 @@ pub fn start_session(
     let capacity = ((planned_minutes as f64 * 60.0) / SECONDS_PER_CARD).ceil() as i64;
     let new_limit = new_limit.clamp(0, capacity);
 
-    let due = select_cards(db, subject_id, true, capacity)?;
+    // As an exam approaches the mix shifts toward weak topics and coverage,
+    // still inside the same bite-size limits (Brief 3.9).
+    let exam_mode = crate::preview::exam_mode(db, subject_id)?;
+
+    let due = select_cards(db, subject_id, true, capacity, exam_mode)?;
     let remaining = (capacity - due.len() as i64).max(0).min(new_limit);
-    let fresh = select_cards(db, subject_id, false, remaining)?;
+    let fresh = select_cards(db, subject_id, false, remaining, exam_mode)?;
 
     let due_count = due.len() as i64;
     let new_count = fresh.len() as i64;
@@ -120,20 +124,36 @@ fn select_cards(
     subject_id: Option<i64>,
     due_only: bool,
     limit: i64,
+    exam_mode: bool,
 ) -> Result<Vec<SessionCard>> {
     if limit <= 0 {
         return Ok(Vec::new());
     }
 
-    // Due cards: the most overdue first. New cards: newest material first,
-    // which is what the student just uploaded and most wants to study.
+    // Normally: due cards most-overdue first, new cards newest-material
+    // first, which is what the student just uploaded and most wants.
+    //
+    // In exam mode: weakest first instead. Low stability means the card has
+    // not stuck, and that is what is worth the remaining time.
     let (filter, order) = if due_only {
         (
             "s.state != 0 AND s.due <= strftime('%Y-%m-%dT%H:%M:%fZ','now')",
-            "c.is_preview ASC, s.due ASC",
+            if exam_mode {
+                "c.is_preview ASC, s.stability ASC, s.due ASC"
+            } else {
+                "c.is_preview ASC, s.due ASC"
+            },
         )
     } else {
-        ("s.state = 0", "c.is_preview ASC, c.id DESC")
+        (
+            "s.state = 0",
+            if exam_mode {
+                // Spread across topics rather than finishing one document.
+                "c.is_preview ASC, c.topic_id ASC, c.id DESC"
+            } else {
+                "c.is_preview ASC, c.id DESC"
+            },
+        )
     };
 
     let sql = format!(

@@ -121,3 +121,32 @@ pub fn explain_user(question: &str, notes: &[DistilledNote]) -> String {
          missing."
     )
 }
+
+pub const PREVIEW_SYSTEM: &str = "You give a student a brief head start on a topic \
+they have not been taught yet. Be conservative: cover only what is standard for the \
+course, and say so through low confidence when you are unsure. Reply with JSON only.";
+
+/// Ask for a small preview of the next topic (Brief 3.7).
+///
+/// The ceilings are stated in the prompt as well as enforced in Rust: a model
+/// that writes less costs fewer tokens than one trimmed afterwards.
+pub fn preview_user(subject: &str, recent: &[String], next_topic: Option<&str>) -> String {
+    let covered = if recent.is_empty() {
+        "nothing yet".to_string()
+    } else {
+        recent.join(", ")
+    };
+    let target = match next_topic {
+        Some(topic) => format!("The next topic is \"{topic}\"."),
+        None => "Work out what is usually taught next on this course.".to_string(),
+    };
+
+    format!(
+        "Course: {subject}\nRecently covered: {covered}\n{target}\n\n\
+         Give a short head start as JSON:\n\
+         {{\"title\":string,\"keyIdeas\":[3-5 strings],\"cards\":[2-3 cards],\"confidence\":0.0-1.0}}\n\
+         Cards use the same shapes as before (flash, mcq with 4 options, short).\n\
+         Keep every idea to one sentence. This is a preview, not a lesson. \
+         Set confidence below 0.5 if you are guessing at the course order."
+    )
+}

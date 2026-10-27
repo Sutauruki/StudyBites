@@ -66,6 +66,12 @@ export const tauriBackend: Backend = {
   githubTokenPresent: () => invoke("github_token_present"),
   updateCheck: () => invoke("update_check"),
 
+  previewOffer: (subjectId) => invoke("preview_offer", { subjectId }),
+  previewGenerate: (subjectId, topicId, topicTitle) =>
+    invoke("preview_generate", { subjectId, topicId, topicTitle }),
+  examDateSet: (subjectId, examDate) => invoke("exam_date_set", { subjectId, examDate }),
+  examStatus: (subjectId) => invoke("exam_status", { subjectId }),
+
   pickFile: async () => {
     const { open } = await import("@tauri-apps/plugin-dialog");
     const picked = await open({

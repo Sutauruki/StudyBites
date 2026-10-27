@@ -44,11 +44,14 @@ export function Modal({
   onClose,
   children,
   actions,
+  wide = false,
 }: {
   title: string;
   onClose: () => void;
   children: ReactNode;
   actions: ReactNode;
+  /** Wider shell, for content that is a list rather than a prompt. */
+  wide?: boolean;
 }) {
   const box = useRef<HTMLDivElement>(null);
 
@@ -68,7 +71,7 @@ export function Modal({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="modal" ref={box} role="dialog" aria-modal="true" aria-label={title}>
+      <div className={`modal${wide ? " modal--wide" : ""}`} ref={box} role="dialog" aria-modal="true" aria-label={title}>
         <h2>{title}</h2>
         {children}
         <div className="modal__actions">{actions}</div>

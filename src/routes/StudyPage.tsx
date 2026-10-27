@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   backend,
   errorText,
+  type PreviewOffer,
   type SessionCard,
   type SessionSummary,
   type StudySession,
@@ -154,6 +155,7 @@ export function StudyPage({
       <SessionDone
         summary={summary}
         hadCards={(session?.cards.length ?? 0) > 0}
+        subjectId={subjectId}
         onDone={onDone}
       />
     );
@@ -282,10 +284,12 @@ function CardFace({
 function SessionDone({
   summary,
   hadCards,
+  subjectId,
   onDone,
 }: {
   summary: SessionSummary | null;
   hadCards: boolean;
+  subjectId: number | null;
   onDone: () => void;
 }) {
   if (!hadCards) {
@@ -317,9 +321,75 @@ function SessionDone({
           )}
         </p>
       )}
+      {subjectId !== null && <NextClassOffer subjectId={subjectId} />}
+
       <button className="btn btn--primary btn--big" onClick={onDone}>
         Finish
       </button>
+    </div>
+  );
+}
+
+/**
+ * "Prepare for next class" (Brief 3.7).
+ *
+ * Offered after a session, never forced, and dismissable. Nothing is
+ * generated until the student asks for it.
+ */
+function NextClassOffer({ subjectId }: { subjectId: number }) {
+  const [offer, setOffer] = useState<PreviewOffer | null>(null);
+  const [dismissed, setDismissed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    void backend
+      .previewOffer(subjectId)
+      .then(setOffer)
+      .catch(() => setOffer(null));
+  }, [subjectId]);
+
+  if (!offer || dismissed || offer.alreadyPrepared) return null;
+
+  if (done !== null) {
+    return (
+      <p className="muted">
+        {done} preview card{done === 1 ? "" : "s"} ready for {offer.title}, labelled as AI
+        preview.
+      </p>
+    );
+  }
+
+  return (
+    <div className="offer">
+      <p className="offer__text">
+        Next is probably <strong>{offer.title}</strong>. Want a 5-minute head start?
+      </p>
+      <p className="muted">{offer.reason} · AI preview, not from your class</p>
+      {error && <Banner kind="error">{error}</Banner>}
+      <div className="row">
+        <button className="btn btn--ghost" onClick={() => setDismissed(true)} disabled={busy}>
+          Not now
+        </button>
+        <button
+          className="btn btn--primary"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            setError(null);
+            try {
+              setDone(await backend.previewGenerate(subjectId, offer.topicId, offer.title));
+            } catch (err) {
+              setError(errorText(err));
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          {busy ? "Preparing…" : "Prepare it"}
+        </button>
+      </div>
     </div>
   );
 }

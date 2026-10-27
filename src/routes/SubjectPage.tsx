@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 import {
   backend,
   errorText,
+  type ExamStatus,
   type ExplainResult,
   type Material,
   type Subject,
@@ -9,6 +10,7 @@ import {
   type TopicMastery,
 } from "../api";
 import { Banner, Empty, Loading, Modal } from "../components/ui";
+import { SchemeImportDialog } from "./SchemeImportDialog";
 import { UploadDialog } from "./UploadDialog";
 
 /**
@@ -35,6 +37,7 @@ export function SubjectPage({
   const [adding, setAdding] = useState<{ parentId: number | null } | null>(null);
   const [editing, setEditing] = useState<Topic | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [importing, setImporting] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -82,6 +85,9 @@ export function SubjectPage({
           </p>
         </div>
         <div className="row">
+          <button className="btn" onClick={() => setImporting(true)}>
+            Import scheme
+          </button>
           <button className="btn" onClick={() => setAdding({ parentId: null })}>
             Add topic
           </button>
@@ -101,6 +107,8 @@ export function SubjectPage({
         onStudy={onStudy}
       />
 
+      <ExamSection subject={subject} onChanged={refresh} onError={setError} />
+
       <MasterySection mastery={mastery} />
 
       <ExplainSection subjectId={subjectId} />
@@ -112,12 +120,14 @@ export function SubjectPage({
           title="No scheme of work yet"
           body="Add the topics your lecturer listed, in order, with week numbers if you have them. You can also skip this entirely — topics can be created later as you upload material."
           action={
-            <button
-              className="btn btn--primary btn--big"
-              onClick={() => setAdding({ parentId: null })}
-            >
-              Add the first topic
-            </button>
+            <div className="row row--wrap" style={{ justifyContent: "center" }}>
+              <button className="btn btn--big" onClick={() => setAdding({ parentId: null })}>
+                Add topics by hand
+              </button>
+              <button className="btn btn--primary btn--big" onClick={() => setImporting(true)}>
+                Import a scheme of work
+              </button>
+            </div>
           }
         />
       ) : (
@@ -146,6 +156,18 @@ export function SubjectPage({
             await backend.topicCreate({ subjectId, parentId: adding.parentId, title, week });
             setAdding(null);
             await refresh();
+          }}
+        />
+      )}
+
+      {importing && (
+        <SchemeImportDialog
+          subjectId={subjectId}
+          hasTopics={(topics ?? []).length > 0}
+          onClose={() => setImporting(false)}
+          onSaved={(count) => {
+            setNotice(`Added ${count} topic${count === 1 ? "" : "s"} from your scheme of work.`);
+            void refresh();
           }}
         />
       )}
@@ -405,7 +427,7 @@ function MaterialsSection({
 
   if (materials.length === 0) {
     return (
-      <div className="card" style={{ padding: "var(--s-5)" }}>
+      <div className="card card--pad">
         <div className="stack">
           <h2>No material yet</h2>
           <p className="muted">
@@ -484,7 +506,7 @@ function MasterySection({ mastery }: { mastery: TopicMastery[] }) {
   return (
     <div className="stack">
       <h2>Progress</h2>
-      <div className="card" style={{ padding: "var(--s-5)" }}>
+      <div className="card card--pad">
         {withCards.map((topic) => (
           <div key={topic.topicId} className="mastery">
             <div className="mastery__label">
@@ -530,7 +552,7 @@ function ExplainSection({ subjectId }: { subjectId: number }) {
   return (
     <div className="stack">
       <h2>Ask about this subject</h2>
-      <div className="card" style={{ padding: "var(--s-5)" }}>
+      <div className="card card--pad">
         <div className="row">
           <input
             className="input"
@@ -560,5 +582,86 @@ function ExplainSection({ subjectId }: { subjectId: number }) {
         )}
       </div>
     </div>
+  );
+}
+
+
+/**
+ * Exam date and what it changes (Brief 3.9).
+ *
+ * Inside three weeks the session mix shifts toward weak topics. The app says
+ * so plainly rather than quietly reordering things behind the student's back.
+ */
+function ExamSection({
+  subject,
+  onChanged,
+  onError,
+}: {
+  subject: Subject | null;
+  onChanged: () => void;
+  onError: (message: string) => void;
+}) {
+  const [status, setStatus] = useState<ExamStatus | null>(null);
+
+  useEffect(() => {
+    if (!subject) return;
+    void backend
+      .examStatus(subject.id)
+      .then(setStatus)
+      .catch(() => setStatus(null));
+  }, [subject]);
+
+  if (!subject) return null;
+  const days = status?.daysUntil ?? null;
+
+  return (
+    <section>
+      <h2>Exam</h2>
+      <div className="card card--pad">
+        <div className="row row--wrap">
+          <input
+            className="input"
+            type="date"
+            style={{ maxWidth: "200px" }}
+            value={subject.examDate ?? ""}
+            aria-label="Exam date"
+            onChange={async (e) => {
+              try {
+                await backend.examDateSet(subject.id, e.target.value || null);
+                onChanged();
+              } catch (err) {
+                onError(errorText(err));
+              }
+            }}
+          />
+          {subject.examDate && (
+            <button
+              className="btn btn--ghost"
+              onClick={async () => {
+                try {
+                  await backend.examDateSet(subject.id, null);
+                  onChanged();
+                } catch (err) {
+                  onError(errorText(err));
+                }
+              }}
+            >
+              Clear
+            </button>
+          )}
+          {status?.examMode && <span className="chip chip--accent">Exam mode on</span>}
+        </div>
+
+        <p className="muted" style={{ marginTop: "var(--s-3)" }}>
+          {days === null
+            ? "Set a date and, in the last three weeks, sessions lean toward the topics you know least well."
+            : days < 0
+              ? "That date has passed. Sessions are back to their usual mix."
+              : status?.examMode
+                ? `${Math.ceil(days)} day${Math.ceil(days) === 1 ? "" : "s"} to go — sessions are favouring your weakest topics.`
+                : `${Math.ceil(days)} days to go. The mix shifts in the last three weeks.`}
+        </p>
+      </div>
+    </section>
   );
 }

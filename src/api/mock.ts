@@ -500,6 +500,18 @@ export const mockBackend: Backend = {
       skippedReason: "Update checking only runs in the desktop app.",
     }),
 
+  previewOffer: () => tick(null),
+  previewGenerate: () =>
+    Promise.reject("Previews need an AI key — this is the browser preview."),
+  examDateSet: (subjectId, examDate) => {
+    const rows = read();
+    const subject = findSubject(rows, subjectId);
+    subject.examDate = examDate;
+    write(rows);
+    return tick(withCount(rows, subject));
+  },
+  examStatus: () => tick({ daysUntil: null, examMode: false }),
+
   pickFile: () => tick(null),
   pickSavePath: () => tick(null),
   openUrl: async (url) => {

@@ -206,6 +206,19 @@ export interface UpdateStatus {
   skippedReason: string | null;
 }
 
+export interface PreviewOffer {
+  topicId: number | null;
+  title: string;
+  reason: string;
+  fromScheme: boolean;
+  alreadyPrepared: boolean;
+}
+
+export interface ExamStatus {
+  daysUntil: number | null;
+  examMode: boolean;
+}
+
 /** Phase 2 additions to the backend surface. */
 export interface Phase2Backend {
   materialUpload(subjectId: number, topicId: number | null, path: string): Promise<Accepted>;
@@ -241,6 +254,15 @@ export interface Phase2Backend {
   updateCheck(): Promise<UpdateStatus>;
 
   /** Open the OS file picker; null when cancelled. */
+  previewOffer(subjectId: number): Promise<PreviewOffer | null>;
+  previewGenerate(
+    subjectId: number,
+    topicId: number | null,
+    topicTitle: string | null,
+  ): Promise<number>;
+  examDateSet(subjectId: number, examDate: string | null): Promise<Subject>;
+  examStatus(subjectId: number): Promise<ExamStatus>;
+
   pickFile(): Promise<string | null>;
   pickSavePath(suggested: string): Promise<string | null>;
   openUrl(url: string): Promise<void>;

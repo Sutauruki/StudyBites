@@ -167,6 +167,10 @@ pub fn material_set_topic(db: &Db, id: i64, topic_id: Option<i64>) -> Result<Mat
           WHERE note_id IN (SELECT id FROM notes WHERE material_id = ?1)",
         (id, topic_id),
     )?;
+    // Filing real material under a topic supersedes its preview.
+    if let Some(topic_id) = topic_id {
+        crate::preview::retire_previews_for_topic(db, topic_id)?;
+    }
     material_get(db, id)
 }
 
