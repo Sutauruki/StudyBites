@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { backend, errorText, isDesktop } from "./api";
+import { backend, errorText, isDesktop, type Subject } from "./api";
 import { Banner } from "./components/ui";
 import { HomePage } from "./routes/HomePage";
 import { SettingsPage } from "./routes/SettingsPage";
@@ -30,6 +30,23 @@ export function App() {
   const [theme, setTheme] = useState<Theme>("system");
   const [version, setVersion] = useState("");
   const [bootError, setBootError] = useState<string | null>(null);
+  const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [due, setDue] = useState(0);
+
+  // The sidebar needs the subject list and the due count; both are cheap
+  // database reads, so they refresh whenever the view changes.
+  const refreshNav = useCallback(async () => {
+    try {
+      const [list, counts] = await Promise.all([
+        backend.subjectsList(false),
+        backend.dueCounts(null),
+      ]);
+      setSubjects(list);
+      setDue(counts.due + counts.new);
+    } catch {
+      /* the sidebar is navigation, not content: never block on it */
+    }
+  }, []);
 
   // One backend round trip at startup: the saved theme and the app version.
   useEffect(() => {
@@ -54,6 +71,10 @@ export function App() {
     };
   }, []);
 
+  useEffect(() => {
+    void refreshNav();
+  }, [refreshNav, view]);
+
   const changeTheme = useCallback(async (next: Theme) => {
     setTheme(next);
     applyTheme(next);
@@ -64,34 +85,63 @@ export function App() {
     }
   }, []);
 
+  const go = (next: View) => setView(next);
+
   return (
     <div className="app">
-      <header className="topbar">
-        <button
-          className="topbar__brand btn btn--ghost"
-          onClick={() => setView({ name: "home" })}
-          aria-label="StudyBites home"
-        >
-          <span className="topbar__mark" aria-hidden="true" />
+      <nav className="sidebar" aria-label="Main">
+        <button className="sidebar__brand" onClick={() => go({ name: "home" })}>
+          <span className="sidebar__mark" aria-hidden="true" />
           StudyBites
         </button>
-        {!isDesktop && <span className="dev-badge">browser preview — mock data</span>}
-        <span className="topbar__spacer" />
-        <button
-          className="btn btn--ghost"
-          onClick={() => setView({ name: "subjects" })}
-          aria-current={view.name === "subjects" ? "page" : undefined}
-        >
-          Subjects
-        </button>
-        <button
-          className="btn btn--ghost"
-          onClick={() => setView({ name: "settings" })}
-          aria-current={view.name === "settings" ? "page" : undefined}
-        >
-          Settings
-        </button>
-      </header>
+
+        <div className="sidebar__group">
+          <button
+            className="sidebar__link"
+            aria-current={view.name === "home" ? "page" : undefined}
+            onClick={() => go({ name: "home" })}
+          >
+            <span>Today</span>
+            {due > 0 && <span className="sidebar__count">{due}</span>}
+          </button>
+          <button
+            className="sidebar__link"
+            aria-current={view.name === "subjects" ? "page" : undefined}
+            onClick={() => go({ name: "subjects" })}
+          >
+            <span>All subjects</span>
+          </button>
+        </div>
+
+        {subjects.length > 0 && (
+          <div className="sidebar__group sidebar__subjects">
+            <span className="sidebar__label">Subjects</span>
+            {subjects.map((subject) => (
+              <button
+                key={subject.id}
+                className="sidebar__link"
+                aria-current={
+                  view.name === "subject" && view.id === subject.id ? "page" : undefined
+                }
+                onClick={() => go({ name: "subject", id: subject.id })}
+              >
+                <span>{subject.name}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div className="sidebar__group sidebar__foot">
+          {!isDesktop && <span className="dev-badge">browser preview</span>}
+          <button
+            className="sidebar__link"
+            aria-current={view.name === "settings" ? "page" : undefined}
+            onClick={() => go({ name: "settings" })}
+          >
+            <span>Settings</span>
+          </button>
+        </div>
+      </nav>
 
       <main className="main">
         <div className="content">

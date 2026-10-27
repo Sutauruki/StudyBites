@@ -445,7 +445,7 @@ function MaterialsSection({
     <div className="stack">
       <div className="row">
         <h2>Material</h2>
-        <span className="topbar__spacer" />
+        <span className="spacer" />
         {ready && (
           <button className="btn btn--primary" onClick={() => onStudy(10)}>
             Study this subject
