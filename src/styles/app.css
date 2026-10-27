@@ -531,3 +531,124 @@ select.input { cursor: pointer; }
 
 /* Pushes whatever follows to the end of a flex row. */
 .spacer { flex: 1; }
+
+/* ======================================================================
+   Composition
+   ----------------------------------------------------------------------
+   The brief calls for one main thing per screen. That means a screen is
+   not a stack of equal cards: it has a statement, an action, and
+   everything else held quiet beneath them.
+
+   Two rules do most of the work here:
+   1. Boxes are earned. A border is for something genuinely contained —
+      a modal, a study card, a row you can act on. Sections are separated
+      by space and type, not by drawing a rectangle around each one.
+   2. One voice is loud. Each screen gets a single display line in the
+      reading serif; everything else steps well back.
+   ====================================================================== */
+
+/* The statement: one line per screen, set in the reading serif. */
+.display {
+  font-family: var(--font-read);
+  font-size: var(--fs-display);
+  line-height: 1.12;
+  letter-spacing: -0.015em;
+  font-weight: 400;
+  text-wrap: balance;
+  max-width: 20ch;
+}
+
+.display em {
+  font-style: normal;
+  color: var(--accent);
+}
+
+/* Quiet editorial label, for section headings that must not compete. */
+.label {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+/* A hairline instead of a box, where two things merely need separating. */
+.rule {
+  height: 1px;
+  background: var(--border);
+  border: 0;
+  margin: 0;
+}
+
+/* Sections breathe rather than sit in frames. */
+.content { gap: var(--s-8); }
+.content > section { gap: var(--s-4); }
+
+/* The opening block sits lower on the page, so a screen does not begin
+   flush against the chrome. */
+.lede { padding-top: clamp(var(--s-4), 4vh, var(--s-7)); display: flex; flex-direction: column; gap: var(--s-5); }
+
+/* Primary action: one per screen, and it should look like the answer to
+   the statement above it. */
+.action { display: flex; align-items: center; gap: var(--s-4); flex-wrap: wrap; }
+
+/* Inline choices under the action — a quiet alternative to a form field. */
+.choices { display: flex; align-items: baseline; gap: var(--s-3); flex-wrap: wrap; font-size: var(--fs-sm); }
+.choice {
+  font: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--text-faint);
+  cursor: pointer;
+  border-bottom: 1px solid transparent;
+  transition: color var(--t-fast), border-color var(--t-fast);
+}
+.choice:hover { color: var(--text-muted); }
+.choice[aria-pressed="true"] {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+/* Lists lose their frame: rules between rows are enough. */
+.card.list { border: 0; border-radius: 0; box-shadow: none; background: none; }
+.card.list .list__item { padding-left: 0; padding-right: var(--s-3); }
+.card.list .list__item:hover { background: none; }
+.card.list .list__item:hover .list__title { color: var(--accent); }
+
+/* Tiles: no shadow, a hairline, and the name doing the work. */
+.tile { box-shadow: none; background: none; }
+.tile:hover { background: var(--surface); }
+.tile__title { font-family: var(--font-read); font-weight: 400; font-size: var(--fs-xl); letter-spacing: 0; }
+
+/* Panels that really are contained keep their surface, but lose the
+   competing shadow. */
+.card--pad { box-shadow: none; }
+
+/* The study card floats on the page rather than sitting in a tray: the
+   screen is the card, so a border around it is one frame too many. */
+.study__card {
+  background: none;
+  border: 0;
+  box-shadow: none;
+  min-height: 52vh;
+}
+.study__answer { border-top-color: var(--border-strong); }
+
+.study__grades .btn {
+  background: none;
+  border-color: var(--border);
+}
+.study__grades .btn:hover:not(:disabled) { background: var(--surface); border-color: var(--border-strong); }
+
+/* Sidebar steps back: a hairline, not a slab of colour. */
+.sidebar { background: none; gap: var(--s-6); padding: var(--s-6) var(--s-4); }
+.sidebar__brand { font-size: var(--fs-md); opacity: 0.85; }
+.sidebar__brand:hover { opacity: 1; }
+.sidebar__link[aria-current="page"] { background: var(--surface-2); box-shadow: none; }
+
+@media (max-width: 860px) {
+  .sidebar { gap: var(--s-2); padding: var(--s-2) var(--s-4); background: var(--surface-2); }
+  .display { font-size: var(--fs-2xl); max-width: none; }
+  .content { gap: var(--s-6); }
+}

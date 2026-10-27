@@ -45,9 +45,9 @@ export function SettingsPage({
 
   return (
     <>
-      <div className="page-head">
+      <div className="page-head lede">
         <div className="page-head__text">
-          <h1>Settings</h1>
+          <h1 className="display">Settings</h1>
           <p className="page-head__sub">StudyBites {version || "…"}</p>
         </div>
       </div>
@@ -73,7 +73,7 @@ export function SettingsPage({
       </section>
 
       <section className="stack">
-        <h2>AI keys</h2>
+        <span className="label">AI keys</span>
         <p className="muted">
           StudyBites uses your own free API key, stored in Windows&rsquo; own credential store —
           never in the app&rsquo;s database, and never sent anywhere except the provider you
@@ -88,7 +88,7 @@ export function SettingsPage({
 
       {queue && queue.quota.length > 0 && (
         <section className="stack">
-          <h2>Today&rsquo;s usage</h2>
+          <span className="label">Today&rsquo;s usage</span>
           <div className="card list">
             {queue.quota.map((usage) => (
               <div key={usage.provider} className="list__item list__item--static">
@@ -113,7 +113,7 @@ export function SettingsPage({
 
       <section className="card card--pad">
         <div className="stack">
-          <h2>Privacy</h2>
+          <span className="label">Privacy</span>
           <p className="muted">
             Your notes stay on this device. There is no telemetry, no analytics and no crash
             reporting. Material is sent only to the AI provider you configure, using your key.
@@ -292,7 +292,7 @@ function UpdateSection() {
 
   return (
     <section className="stack">
-      <h2>Updates</h2>
+      <span className="label">Updates</span>
       <div className="card card--pad">
         <div className="stack">
           <p className="muted">

@@ -74,14 +74,13 @@ export function SubjectPage({
 
   return (
     <>
-      <div className="page-head">
+      <div className="page-head lede">
         <div className="page-head__text">
-          <button className="btn btn--ghost" onClick={onBack}>
-            ← All subjects
-          </button>
-          <h1 style={{ marginTop: "var(--s-2)" }}>{subject?.name ?? "…"}</h1>
+          <h1 className="display">{subject?.name ?? "…"}</h1>
           <p className="page-head__sub">
-            Scheme of work — optional. {flat.length} topic{flat.length === 1 ? "" : "s"}.
+            {flat.length === 0
+              ? "No scheme of work yet."
+              : `${flat.length} topic${flat.length === 1 ? "" : "s"} in the outline.`}
           </p>
         </div>
         <div className="row">
@@ -429,7 +428,7 @@ function MaterialsSection({
     return (
       <div className="card card--pad">
         <div className="stack">
-          <h2>No material yet</h2>
+          <span className="label">Material</span>
           <p className="muted">
             Add today&rsquo;s notes or a lecture PDF. StudyBites reads it, writes compact notes
             and cards, and files them under the topic you confirm.
@@ -444,7 +443,7 @@ function MaterialsSection({
   return (
     <div className="stack">
       <div className="row">
-        <h2>Material</h2>
+        <span className="label">Material</span>
         <span className="spacer" />
         {ready && (
           <button className="btn btn--primary" onClick={() => onStudy(10)}>
@@ -505,7 +504,7 @@ function MasterySection({ mastery }: { mastery: TopicMastery[] }) {
 
   return (
     <div className="stack">
-      <h2>Progress</h2>
+      <span className="label">Progress</span>
       <div className="card card--pad">
         {withCards.map((topic) => (
           <div key={topic.topicId} className="mastery">
@@ -551,7 +550,7 @@ function ExplainSection({ subjectId }: { subjectId: number }) {
 
   return (
     <div className="stack">
-      <h2>Ask about this subject</h2>
+      <span className="label">Ask about this subject</span>
       <div className="card card--pad">
         <div className="row">
           <input
@@ -616,7 +615,7 @@ function ExamSection({
 
   return (
     <section>
-      <h2>Exam</h2>
+      <span className="label">Exam</span>
       <div className="card card--pad">
         <div className="row row--wrap">
           <input
