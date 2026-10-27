@@ -1,19 +1,23 @@
-/* Design tokens. Light is the default; dark follows the system unless the
-   user picks a theme in Settings (data-theme on <html> wins). */
+/* Design tokens.
+   A calm, neutral surface with one accent used sparingly. Light is default;
+   dark follows the system unless Settings overrides it. */
 
 :root {
-  /* type */
-  --font-sans: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
-  --fs-xs: 0.75rem;
-  --fs-sm: 0.875rem;
-  --fs-md: 1rem;
-  --fs-lg: 1.25rem;
-  --fs-xl: 1.75rem;
-  --fs-card: 1.5rem;
-  --lh-tight: 1.25;
-  --lh-body: 1.6;
+  --font-sans: "Segoe UI Variable Display", "Segoe UI", system-ui, -apple-system,
+    "Inter", sans-serif;
 
-  /* spacing */
+  /* Type: a small scale, with real size reserved for study cards. */
+  --fs-xs: 0.75rem;
+  --fs-sm: 0.8125rem;
+  --fs-md: 0.9375rem;
+  --fs-lg: 1.125rem;
+  --fs-xl: 1.5rem;
+  --fs-2xl: 2rem;
+  --fs-card: 1.625rem;
+  --lh-tight: 1.2;
+  --lh-body: 1.6;
+  --tracking-tight: -0.014em;
+
   --s-1: 4px;
   --s-2: 8px;
   --s-3: 12px;
@@ -21,73 +25,89 @@
   --s-5: 24px;
   --s-6: 32px;
   --s-7: 48px;
-  --s-8: 64px;
+  --s-8: 72px;
 
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 16px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+  --radius-full: 999px;
 
-  --maxw-content: 760px;
+  --maxw-content: 720px;
+  --maxw-card: 640px;
 
-  /* motion — used sparingly (Brief 4) */
-  --t-fast: 110ms ease;
-  --t-base: 180ms ease;
+  --t-fast: 120ms cubic-bezier(0.4, 0, 0.2, 1);
+  --t-base: 220ms cubic-bezier(0.4, 0, 0.2, 1);
 
-  /* light palette */
-  --bg: #f7f7f5;
+  /* Light — warm paper, not clinical white. */
+  --bg: #fbfbfa;
   --surface: #ffffff;
-  --surface-2: #f1f1ee;
-  --border: #e2e2dd;
-  --border-strong: #cfcfc8;
-  --text: #1b1b19;
-  --text-muted: #6b6b64;
-  --text-faint: #96968d;
-  --accent: #2f6fed;
+  --surface-2: #f4f4f2;
+  --surface-3: #ebebe8;
+  --border: #e6e5e1;
+  --border-strong: #d4d3ce;
+  --text: #1a1917;
+  --text-muted: #6f6c66;
+  --text-faint: #9b9892;
+  --accent: #4f46e5;
+  --accent-hover: #4338ca;
   --accent-text: #ffffff;
-  --accent-soft: #e8f0fe;
-  --danger: #b3261e;
-  --danger-soft: #fdecea;
-  --ok: #1f7a45;
-  --shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 8px 24px rgba(0, 0, 0, 0.06);
-  --focus: 0 0 0 3px rgba(47, 111, 237, 0.35);
+  --accent-soft: #eef0fe;
+  --accent-border: #c7cbfb;
+  --danger: #b42318;
+  --danger-soft: #fef3f2;
+  --ok: #067647;
+  --ok-soft: #ecfdf3;
+  --shadow-sm: 0 1px 2px rgba(16, 15, 14, 0.04);
+  --shadow: 0 1px 3px rgba(16, 15, 14, 0.06), 0 12px 32px -12px rgba(16, 15, 14, 0.12);
+  --focus: 0 0 0 3px rgba(79, 70, 229, 0.28);
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #14151a;
-    --surface: #1c1e24;
-    --surface-2: #23262e;
-    --border: #2d313a;
-    --border-strong: #3c414d;
-    --text: #e9eaec;
-    --text-muted: #a0a4ae;
-    --text-faint: #7b808b;
-    --accent: #7aa2ff;
-    --accent-text: #10131a;
-    --accent-soft: #1f2838;
-    --danger: #f2b8b5;
-    --danger-soft: #35211f;
-    --ok: #74d39c;
-    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.35);
-    --focus: 0 0 0 3px rgba(122, 162, 255, 0.4);
+    --bg: #0e0e10;
+    --surface: #17171a;
+    --surface-2: #1e1e22;
+    --surface-3: #27272c;
+    --border: #26262b;
+    --border-strong: #35353c;
+    --text: #f2f2f0;
+    --text-muted: #9d9da6;
+    --text-faint: #6e6e78;
+    --accent: #8b8cf8;
+    --accent-hover: #a0a1fa;
+    --accent-text: #11111a;
+    --accent-soft: #1c1c2e;
+    --accent-border: #33335a;
+    --danger: #f9918a;
+    --danger-soft: #2a1715;
+    --ok: #5fd39b;
+    --ok-soft: #10231a;
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
+    --shadow: 0 1px 3px rgba(0, 0, 0, 0.5), 0 12px 32px -12px rgba(0, 0, 0, 0.7);
+    --focus: 0 0 0 3px rgba(139, 140, 248, 0.32);
   }
 }
 
 :root[data-theme="dark"] {
-  --bg: #14151a;
-  --surface: #1c1e24;
-  --surface-2: #23262e;
-  --border: #2d313a;
-  --border-strong: #3c414d;
-  --text: #e9eaec;
-  --text-muted: #a0a4ae;
-  --text-faint: #7b808b;
-  --accent: #7aa2ff;
-  --accent-text: #10131a;
-  --accent-soft: #1f2838;
-  --danger: #f2b8b5;
-  --danger-soft: #35211f;
-  --ok: #74d39c;
-  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.35);
-  --focus: 0 0 0 3px rgba(122, 162, 255, 0.4);
+  --bg: #0e0e10;
+  --surface: #17171a;
+  --surface-2: #1e1e22;
+  --surface-3: #27272c;
+  --border: #26262b;
+  --border-strong: #35353c;
+  --text: #f2f2f0;
+  --text-muted: #9d9da6;
+  --text-faint: #6e6e78;
+  --accent: #8b8cf8;
+  --accent-hover: #a0a1fa;
+  --accent-text: #11111a;
+  --accent-soft: #1c1c2e;
+  --accent-border: #33335a;
+  --danger: #f9918a;
+  --danger-soft: #2a1715;
+  --ok: #5fd39b;
+  --ok-soft: #10231a;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.5), 0 12px 32px -12px rgba(0, 0, 0, 0.7);
+  --focus: 0 0 0 3px rgba(139, 140, 248, 0.32);
 }

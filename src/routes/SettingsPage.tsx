@@ -54,14 +54,14 @@ export function SettingsPage({
 
       {error && <Banner kind="error">{error}</Banner>}
 
-      <section className="card" style={{ padding: "var(--s-5)" }}>
+      <section className="card card--pad">
         <div className="field">
           <span className="field__label">Theme</span>
-          <div className="row row--wrap">
+          <div className="segmented">
             {THEMES.map((option) => (
               <button
                 key={option.value}
-                className={`btn${theme === option.value ? " btn--primary" : ""}`}
+                className="btn"
                 aria-pressed={theme === option.value}
                 onClick={() => onThemeChange(option.value)}
               >
@@ -111,7 +111,7 @@ export function SettingsPage({
 
       <UpdateSection />
 
-      <section className="card" style={{ padding: "var(--s-5)" }}>
+      <section className="card card--pad">
         <div className="stack">
           <h2>Privacy</h2>
           <p className="muted">
@@ -156,55 +156,55 @@ function KeyRow({
   };
 
   return (
-    <div className="list__item list__item--static">
-      <div className="list__text">
-        <div className="list__title">
-          {provider.label}{" "}
-          {provider.configured ? (
-            <span className="chip chip--accent">Key saved</span>
-          ) : (
-            <span className="chip">No key</span>
-          )}
-        </div>
-        <div className="list__meta">
-          {provider.defaultModel} ·{" "}
-          <button
-            className="btn btn--ghost btn--icon"
-            onClick={() => void backend.openUrl(provider.helpUrl)}
-          >
-            Get a free key
-          </button>
-        </div>
+    <div className="key-row">
+      <div className="key-row__head">
+        <span className="key-row__name">{provider.label}</span>
+        {provider.configured ? (
+          <span className="chip chip--ok">Key saved</span>
+        ) : (
+          <span className="chip">No key</span>
+        )}
       </div>
-      <input
-        className="input"
-        type="password"
-        value={value}
-        placeholder={provider.configured ? "Replace key…" : "Paste key…"}
-        autoComplete="off"
-        onChange={(e) => setValue(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && !busy) void save();
-        }}
-      />
-      <button className="btn" onClick={save} disabled={busy}>
-        {saved ? "Saved" : "Save"}
-      </button>
-      {provider.configured && (
-        <button
-          className="btn btn--danger"
-          onClick={async () => {
-            try {
-              await backend.providerKeySet(provider.id, "");
-              onSaved();
-            } catch (err) {
-              onError(errorText(err));
-            }
-          }}
-        >
-          Remove
+
+      <div className="key-row__meta">
+        <span>{provider.defaultModel}</span>
+        <span aria-hidden="true">·</span>
+        <button className="link" onClick={() => void backend.openUrl(provider.helpUrl)}>
+          Get a free key
         </button>
-      )}
+      </div>
+
+      <div className="key-row__controls">
+        <input
+          className="input"
+          type="password"
+          value={value}
+          placeholder={provider.configured ? "Replace key…" : "Paste key…"}
+          autoComplete="off"
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !busy) void save();
+          }}
+        />
+        <button className="btn" onClick={save} disabled={busy || !value.trim()}>
+          {saved ? "Saved" : "Save"}
+        </button>
+        {provider.configured && (
+          <button
+            className="btn btn--danger"
+            onClick={async () => {
+              try {
+                await backend.providerKeySet(provider.id, "");
+                onSaved();
+              } catch (err) {
+                onError(errorText(err));
+              }
+            }}
+          >
+            Remove
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -244,7 +244,7 @@ function UpdateSection() {
   return (
     <section className="stack">
       <h2>Updates</h2>
-      <div className="card" style={{ padding: "var(--s-5)" }}>
+      <div className="card card--pad">
         <div className="stack">
           <p className="muted">
             StudyBites can check whether a newer build has been published and tell you. It never
@@ -256,7 +256,7 @@ function UpdateSection() {
             the app.
           </p>
 
-          <div className="row">
+          <div className="key-row__controls">
             <input
               className="input"
               type="password"

@@ -132,7 +132,7 @@ export function HomePage({
         </Banner>
       )}
 
-      <div className="card bite">
+      <div className="bite">
         <div className="field">
           <span className="field__label">Subject</span>
           <select
@@ -151,11 +151,11 @@ export function HomePage({
 
         <div className="field">
           <span className="field__label">How long?</span>
-          <div className="row row--wrap">
+          <div className="segmented">
             {LENGTHS.map((length) => (
               <button
                 key={length}
-                className={`btn${minutes === length ? " btn--primary" : ""}`}
+                className="btn"
                 aria-pressed={minutes === length}
                 onClick={() => setMinutes(length)}
               >

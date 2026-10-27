@@ -405,7 +405,7 @@ function MaterialsSection({
 
   if (materials.length === 0) {
     return (
-      <div className="card" style={{ padding: "var(--s-5)" }}>
+      <div className="card card--pad">
         <div className="stack">
           <h2>No material yet</h2>
           <p className="muted">
@@ -484,7 +484,7 @@ function MasterySection({ mastery }: { mastery: TopicMastery[] }) {
   return (
     <div className="stack">
       <h2>Progress</h2>
-      <div className="card" style={{ padding: "var(--s-5)" }}>
+      <div className="card card--pad">
         {withCards.map((topic) => (
           <div key={topic.topicId} className="mastery">
             <div className="mastery__label">
@@ -530,7 +530,7 @@ function ExplainSection({ subjectId }: { subjectId: number }) {
   return (
     <div className="stack">
       <h2>Ask about this subject</h2>
-      <div className="card" style={{ padding: "var(--s-5)" }}>
+      <div className="card card--pad">
         <div className="row">
           <input
             className="input"
