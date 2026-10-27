@@ -176,7 +176,7 @@ export function StudyPage({
           {clock}
         </span>
         <button className="btn btn--ghost" onClick={() => void finish()}>
-          End (Esc)
+          End <kbd>Esc</kbd>
         </button>
       </div>
 
@@ -199,13 +199,13 @@ export function StudyPage({
 
       {!revealed ? (
         <button className="btn btn--primary btn--big" onClick={() => setRevealed(true)}>
-          Reveal <span className="muted">(Space)</span>
+          Reveal <kbd>Space</kbd>
         </button>
       ) : (
         <div className="study__grades">
           {GRADES.map((g) => (
             <button key={g.rating} className="btn" onClick={() => void grade(g.rating)}>
-              {g.label} <span className="muted">{g.key}</span>
+              {g.label} <kbd>{g.key}</kbd>
             </button>
           ))}
         </div>

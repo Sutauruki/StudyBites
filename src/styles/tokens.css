@@ -18,6 +18,10 @@
      This is what makes a card feel like a book rather than a form. */
   --font-read: Constantia, "Iowan Old Style", Cambria, Georgia, "Times New Roman", serif;
 
+  /* Metadata — week numbers, counts, the session clock — sits in mono so
+     figures line up and read as data rather than prose. */
+  --font-mono: "Cascadia Mono", "SF Mono", Consolas, "Liberation Mono", monospace;
+
   --fs-xs: 0.75rem;
   --fs-sm: 0.8438rem;
   --fs-md: 0.9375rem;
@@ -41,9 +45,10 @@
   --s-7: 48px;
   --s-8: 72px;
 
-  --radius-sm: 7px;
-  --radius-md: 11px;
-  --radius-lg: 16px;
+  /* Crisp, not soft. Large radii read as consumer-app; this is a tool. */
+  --radius-sm: 5px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
   --radius-full: 999px;
 
   /* Line length for prose. Applied to text, never to the window. */
@@ -74,8 +79,8 @@
   --danger-soft: #fae9e6;
   --ok: #3d6b4a;
   --ok-soft: #e6f0e7;
-  --shadow-sm: 0 1px 2px rgba(60, 48, 30, 0.05);
-  --shadow: 0 1px 3px rgba(60, 48, 30, 0.07), 0 14px 34px -14px rgba(60, 48, 30, 0.2);
+  --shadow-sm: 0 1px 2px rgba(60, 48, 30, 0.03);
+  --shadow: 0 1px 2px rgba(60, 48, 30, 0.04), 0 12px 28px -16px rgba(60, 48, 30, 0.16);
   --focus: 0 0 0 3px rgba(154, 107, 40, 0.3);
 }
 

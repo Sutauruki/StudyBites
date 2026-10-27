@@ -36,6 +36,15 @@ export function SubjectPage({
   const [editing, setEditing] = useState<Topic | null>(null);
   const [uploading, setUploading] = useState(false);
   const [importing, setImporting] = useState(false);
+  // Subtopics stay folded until asked for: a full scheme of work should
+  // fit on one screen.
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  const toggleTopic = (id: number) =>
+    setExpanded((open) => {
+      const next = new Set(open);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
 
   const refresh = useCallback(async () => {
     try {
@@ -128,13 +137,15 @@ export function SubjectPage({
           }
         />
       ) : (
-        <div className="card list">
+        <div className="outline">
           {topics.map((topic, index) => (
-            <TopicRows
+            <OutlineItem
               key={topic.id}
               topic={topic}
               isFirst={index === 0}
               isLast={index === topics.length - 1}
+              expanded={expanded.has(topic.id)}
+              onToggle={() => toggleTopic(topic.id)}
               onAddChild={() => setAdding({ parentId: topic.id })}
               onEdit={setEditing}
               onNudge={(id, delta) => void run(() => backend.topicNudge(id, delta))}
@@ -199,10 +210,13 @@ export function SubjectPage({
   );
 }
 
-function TopicRows({
+/** One topic: a single line, with its subtopics folded away. */
+function OutlineItem({
   topic,
   isFirst,
   isLast,
+  expanded,
+  onToggle,
   onAddChild,
   onEdit,
   onNudge,
@@ -211,112 +225,133 @@ function TopicRows({
   topic: Topic;
   isFirst: boolean;
   isLast: boolean;
+  expanded: boolean;
+  onToggle: () => void;
   onAddChild: () => void;
   onEdit: (topic: Topic) => void;
   onNudge: (id: number, delta: number) => void;
   onDelete: (id: number) => void;
 }) {
+  const count = topic.children.length;
+
   return (
-    <>
-      <Row
+    <div className="outline__item">
+      <OutlineRow
         topic={topic}
         isFirst={isFirst}
         isLast={isLast}
         onEdit={onEdit}
         onNudge={onNudge}
         onDelete={onDelete}
-        extra={
-          <button className="btn btn--ghost" onClick={onAddChild}>
-            + Subtopic
+        onAddChild={onAddChild}
+        toggle={
+          <button
+            className={`outline__toggle${count === 0 ? " outline__toggle--empty" : ""}`}
+            onClick={onToggle}
+            disabled={count === 0}
+            aria-expanded={count === 0 ? undefined : expanded}
+            aria-label={expanded ? `Hide subtopics of ${topic.title}` : `Show subtopics of ${topic.title}`}
+          >
+            {expanded ? "−" : "+"}
           </button>
         }
+        trailing={count > 0 && !expanded ? <span className="outline__count">{count}</span> : null}
       />
-      {topic.children.map((child, index) => (
-        <Row
-          key={child.id}
-          topic={child}
-          nested
-          isFirst={index === 0}
-          isLast={index === topic.children.length - 1}
-          onEdit={onEdit}
-          onNudge={onNudge}
-          onDelete={onDelete}
-        />
-      ))}
-    </>
+
+      {expanded && count > 0 && (
+        <div className="outline__children">
+          {topic.children.map((child, index) => (
+            <div className="outline__item outline__item--child" key={child.id}>
+              <OutlineRow
+                topic={child}
+                isFirst={index === 0}
+                isLast={index === count - 1}
+                onEdit={onEdit}
+                onNudge={onNudge}
+                onDelete={onDelete}
+                toggle={<span className="outline__toggle outline__toggle--empty" />}
+              />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
-function Row({
+function OutlineRow({
   topic,
-  nested = false,
   isFirst,
   isLast,
   onEdit,
   onNudge,
   onDelete,
-  extra,
+  onAddChild,
+  toggle,
+  trailing,
 }: {
   topic: Topic;
-  nested?: boolean;
   isFirst: boolean;
   isLast: boolean;
   onEdit: (topic: Topic) => void;
   onNudge: (id: number, delta: number) => void;
   onDelete: (id: number) => void;
-  extra?: ReactNode;
+  onAddChild?: () => void;
+  toggle: ReactNode;
+  trailing?: ReactNode;
 }) {
   const childCount = topic.children.length;
-  const meta =
-    [
-      topic.week !== null ? `Week ${topic.week}` : null,
-      childCount > 0 ? `${childCount} subtopic${childCount === 1 ? "" : "s"}` : null,
-    ]
-      .filter(Boolean)
-      .join(" · ") || (nested ? "Subtopic" : "Topic");
 
   return (
-    <div className={`list__item list__item--static${nested ? " list__item--child" : ""}`}>
-      <div className="list__text">
-        <div className="list__title">{topic.title}</div>
-        <div className="list__meta">{meta}</div>
-      </div>
+    <div className="outline__row">
+      {toggle}
+      <span className="outline__week">{topic.week !== null ? `W${topic.week}` : ""}</span>
+      <span className="outline__title">{topic.title}</span>
+      {trailing}
       {topic.isOffScheme && <span className="chip">Off scheme</span>}
-      {topic.isPreview && <span className="chip chip--accent">AI preview</span>}
-      <button
-        className="btn btn--ghost btn--icon"
-        onClick={() => onNudge(topic.id, -1)}
-        disabled={isFirst}
-        aria-label={`Move ${topic.title} up`}
-        title="Move up"
-      >
-        ↑
-      </button>
-      <button
-        className="btn btn--ghost btn--icon"
-        onClick={() => onNudge(topic.id, 1)}
-        disabled={isLast}
-        aria-label={`Move ${topic.title} down`}
-        title="Move down"
-      >
-        ↓
-      </button>
-      {extra}
-      <button className="btn btn--ghost" onClick={() => onEdit(topic)}>
-        Edit
-      </button>
-      <button
-        className="btn btn--danger"
-        onClick={() => {
-          const warning =
-            childCount > 0
-              ? `Delete “${topic.title}” and its ${childCount} subtopic${childCount === 1 ? "" : "s"}?`
-              : `Delete “${topic.title}”?`;
-          if (window.confirm(warning)) onDelete(topic.id);
-        }}
-      >
-        Delete
-      </button>
+      {topic.isPreview && <span className="chip chip--accent">Preview</span>}
+
+      <span className="spacer" />
+
+      <div className="outline__actions">
+        <button
+          className="btn"
+          onClick={() => onNudge(topic.id, -1)}
+          disabled={isFirst}
+          aria-label={`Move ${topic.title} up`}
+        >
+          ↑
+        </button>
+        <button
+          className="btn"
+          onClick={() => onNudge(topic.id, 1)}
+          disabled={isLast}
+          aria-label={`Move ${topic.title} down`}
+        >
+          ↓
+        </button>
+        {onAddChild && (
+          <button className="btn" onClick={onAddChild} aria-label={`Add a subtopic to ${topic.title}`}>
+            + sub
+          </button>
+        )}
+        <button className="btn" onClick={() => onEdit(topic)}>
+          Edit
+        </button>
+        <button
+          className="btn btn--danger"
+          aria-label={`Delete ${topic.title}`}
+          onClick={() => {
+            const warning =
+              childCount > 0
+                ? `Delete “${topic.title}” and its ${childCount} subtopic${childCount === 1 ? "" : "s"}?`
+                : `Delete “${topic.title}”?`;
+            if (window.confirm(warning)) onDelete(topic.id);
+          }}
+        >
+          ✕
+        </button>
+      </div>
     </div>
   );
 }
