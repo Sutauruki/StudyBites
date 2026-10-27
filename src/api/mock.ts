@@ -487,6 +487,9 @@ export const mockBackend: Backend = {
     ]),
   providerKeySet: () =>
     Promise.reject("Keys are stored in the OS keychain, which the browser preview has no access to."),
+  providerModels: () =>
+    Promise.reject("Listing models needs the desktop app — this is the browser preview."),
+  providerModelSet: () => tick(undefined),
   githubTokenSet: () =>
     Promise.reject("Keys are stored in the OS keychain, which the browser preview has no access to."),
   githubTokenPresent: () => tick(false),

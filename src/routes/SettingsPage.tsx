@@ -139,6 +139,8 @@ function KeyRow({
   const [value, setValue] = useState("");
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [models, setModels] = useState<string[] | null>(null);
+  const [loadingModels, setLoadingModels] = useState(false);
 
   const save = async () => {
     setBusy(true);
@@ -167,11 +169,58 @@ function KeyRow({
       </div>
 
       <div className="key-row__meta">
-        <span>{provider.defaultModel}</span>
+        {provider.defaultModel ? (
+          <span>Model: {provider.defaultModel}</span>
+        ) : (
+          <span>No model chosen yet</span>
+        )}
         <span aria-hidden="true">·</span>
         <button className="link" onClick={() => void backend.openUrl(provider.helpUrl)}>
           Get a free key
         </button>
+      </div>
+
+      {/* Models are listed by the provider itself, so a retired one can
+          always be swapped without waiting for a new build. */}
+      <div className="key-row__controls">
+        {models === null ? (
+          <button
+            className="btn"
+            disabled={loadingModels}
+            onClick={async () => {
+              setLoadingModels(true);
+              try {
+                setModels(await backend.providerModels(provider.id));
+              } catch (err) {
+                onError(errorText(err));
+              } finally {
+                setLoadingModels(false);
+              }
+            }}
+          >
+            {loadingModels ? "Loading models…" : "Choose model"}
+          </button>
+        ) : (
+          <select
+            className="input"
+            value={provider.defaultModel}
+            onChange={async (e) => {
+              try {
+                await backend.providerModelSet(provider.id, e.target.value);
+                onSaved();
+              } catch (err) {
+                onError(errorText(err));
+              }
+            }}
+          >
+            <option value="">Choose a model…</option>
+            {models.map((model) => (
+              <option key={model} value={model}>
+                {model}
+              </option>
+            ))}
+          </select>
+        )}
       </div>
 
       <div className="key-row__controls">
