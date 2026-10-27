@@ -26,6 +26,10 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::app_info,
+            commands::license_status,
+            commands::eula_text,
+            commands::eula_accept,
+            commands::activate,
             commands::subjects_list,
             commands::subject_get,
             commands::subject_create,

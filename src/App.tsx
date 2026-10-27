@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
-import { backend, errorText, isDesktop, type Subject } from "./api";
+import { backend, errorText, isDesktop, type LicenseStatus, type Subject } from "./api";
 import { Banner } from "./components/ui";
 import { HomePage } from "./routes/HomePage";
+import { OnboardingPage } from "./routes/OnboardingPage";
 import { SettingsPage } from "./routes/SettingsPage";
 import { StudyPage } from "./routes/StudyPage";
 import { SubjectPage } from "./routes/SubjectPage";
@@ -32,6 +33,7 @@ export function App() {
   const [bootError, setBootError] = useState<string | null>(null);
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [due, setDue] = useState(0);
+  const [license, setLicense] = useState<LicenseStatus | null>(null);
 
   // The sidebar needs the subject list and the due count; both are cheap
   // database reads, so they refresh whenever the view changes.
@@ -48,20 +50,23 @@ export function App() {
     }
   }, []);
 
-  // One backend round trip at startup: the saved theme and the app version.
+  // Startup. The licence comes first: until it is known, nothing else may be
+  // asked for, because every other command refuses while the app is locked.
   useEffect(() => {
     let alive = true;
     (async () => {
       try {
-        const [saved, info] = await Promise.all([
-          backend.settingGet(THEME_KEY),
-          backend.appInfo(),
-        ]);
+        const [status, info] = await Promise.all([backend.licenseStatus(), backend.appInfo()]);
+        if (!alive) return;
+        setLicense(status);
+        setVersion(info.version);
+
+        if (!status.unlocked) return;
+        const saved = await backend.settingGet(THEME_KEY);
         if (!alive) return;
         const next = (saved as Theme) ?? "system";
         setTheme(next);
         applyTheme(next);
-        setVersion(info.version);
       } catch (err) {
         if (alive) setBootError(errorText(err));
       }
@@ -72,8 +77,8 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    void refreshNav();
-  }, [refreshNav, view]);
+    if (license?.unlocked) void refreshNav();
+  }, [refreshNav, view, license?.unlocked]);
 
   const changeTheme = useCallback(async (next: Theme) => {
     setTheme(next);
@@ -86,6 +91,23 @@ export function App() {
   }, []);
 
   const go = (next: View) => setView(next);
+
+  // The agreement and activation own the whole window. Everything below this
+  // point assumes an unlocked database.
+  if (bootError && !license) {
+    return (
+      <div className="gate">
+        <div className="gate__inner">
+          <h1 className="display">StudyBites could not start</h1>
+          <Banner kind="error">{bootError}</Banner>
+        </div>
+      </div>
+    );
+  }
+  if (!license) return null;
+  if (!license.eulaAccepted || !license.unlocked) {
+    return <OnboardingPage status={license} onChanged={setLicense} />;
+  }
 
   return (
     <div className="app">
@@ -171,7 +193,12 @@ export function App() {
             />
           )}
           {view.name === "settings" && (
-            <SettingsPage theme={theme} onThemeChange={changeTheme} version={version} />
+            <SettingsPage
+              theme={theme}
+              onThemeChange={changeTheme}
+              version={version}
+              license={license}
+            />
           )}
         </div>
       </main>

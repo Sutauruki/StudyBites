@@ -1,14 +1,21 @@
 //! IPC surface. Inputs are validated in `studybites-core`, never trusted here.
 
-use crate::state::{to_ipc, AppState, LOCK_FAILED};
+use crate::state::{to_ipc, AppState, Status, LOCK_FAILED, NOT_ACTIVATED};
 use std::sync::MutexGuard;
 use studybites_core::{subjects, topics, Db, NewTopic, Subject, Topic};
 use tauri::State;
 
 type Ipc<T> = Result<T, String>;
 
-/// Take the database lock, or report that an earlier command poisoned it.
+/// Take the database lock.
+///
+/// This is the single gate on everything the app stores. Until the licence
+/// has been verified and the key derived from it, the handle behind this
+/// mutex is an empty placeholder and callers get told to activate instead.
 fn lock<'a>(state: &'a State<'_, AppState>) -> Result<MutexGuard<'a, Db>, String> {
+    if !state.is_unlocked() {
+        return Err(NOT_ACTIVATED.to_string());
+    }
     state.db.lock().map_err(|_| LOCK_FAILED.to_string())
 }
 
@@ -16,8 +23,42 @@ fn lock<'a>(state: &'a State<'_, AppState>) -> Result<MutexGuard<'a, Db>, String
 pub fn app_info() -> serde_json::Value {
     serde_json::json!({
         "version": env!("CARGO_PKG_VERSION"),
-        "phase": 1,
+        "phase": 3,
     })
+}
+
+// ---- licensing ----------------------------------------------------------
+
+/// Everything the onboarding screens need. Safe to call before activation —
+/// it is the one command that is, besides `eula_text` and `activate`.
+#[tauri::command]
+pub fn license_status(state: State<AppState>) -> Status {
+    state.status()
+}
+
+/// The agreement text, read from the bundled resource so the owner can edit
+/// it without touching code.
+#[tauri::command]
+pub fn eula_text(app: tauri::AppHandle) -> Ipc<String> {
+    use tauri::Manager;
+    let path = app
+        .path()
+        .resolve("EULA.md", tauri::path::BaseDirectory::Resource)
+        .map_err(|e| format!("the agreement could not be located: {e}"))?;
+    std::fs::read_to_string(path).map_err(|e| format!("the agreement could not be read: {e}"))
+}
+
+#[tauri::command]
+pub fn eula_accept(state: State<AppState>) -> Ipc<Status> {
+    state.accept_eula().map_err(to_ipc)?;
+    Ok(state.status())
+}
+
+/// Verify and store an activation code, then open the database it unlocks.
+#[tauri::command]
+pub fn activate(state: State<AppState>, code: String) -> Ipc<Status> {
+    state.activate(&code).map_err(to_ipc)?;
+    Ok(state.status())
 }
 
 // ---- subjects -----------------------------------------------------------

@@ -7,10 +7,12 @@
 //!   hash. It is never touched during normal use — only for "Download
 //!   original" and for re-processing later with a better model.
 //!
-//! Encryption of cold storage arrives in Phase 3; the file already carries a
-//! format marker so adding it will not confuse old files for new. Extraction
-//! works in memory, so no plaintext temp file is ever written.
+//! Cold storage is compressed and then sealed with the device file key, under
+//! its own format marker so that files written before encryption existed are
+//! still readable. Extraction works in memory, so no plaintext temp file is
+//! ever written.
 
+use crate::crypto::{self, SecretKey};
 use crate::error::{CoreError, Result};
 use sha2::{Digest, Sha256};
 use std::io::{Read, Write};
@@ -232,8 +234,11 @@ pub fn extract(path: &Path) -> Result<Extracted> {
 /// folder, and these files are written once and almost never read.
 const ZSTD_LEVEL: i32 = 9;
 
-/// Format marker, so a Phase 3 encrypted file is never mistaken for this one.
-const COLD_MAGIC: &[u8; 4] = b"SBC1";
+/// Format markers. `SBC1` is compressed only — written by builds before
+/// encryption existed, still read so nobody loses an upload. `SBC2` is
+/// compressed and then sealed with the device-derived file key.
+const COLD_MAGIC_PLAIN: &[u8; 4] = b"SBC1";
+const COLD_MAGIC_SEALED: &[u8; 4] = b"SBC2";
 
 /// Where originals live, under the app data directory.
 pub fn cold_dir(app_data: &Path) -> PathBuf {
@@ -257,10 +262,11 @@ fn safe_name(cold_path: &str) -> Result<&str> {
     Ok(cold_path)
 }
 
-/// Store an original, compressed, under a name derived from its hash.
+/// Store an original: compress, then encrypt with the device file key.
 ///
-/// Returns the name to put in `materials.cold_path`.
-pub fn cold_store(app_data: &Path, sha256: &str, bytes: &[u8]) -> Result<String> {
+/// Returns the name to put in `materials.cold_path`. The folder it lands in
+/// is useless on any other machine — the key is derived, never stored.
+pub fn cold_store(app_data: &Path, key: &SecretKey, sha256: &str, bytes: &[u8]) -> Result<String> {
     let name = format!("{sha256}.sbc");
     safe_name(&name)?;
 
@@ -271,24 +277,45 @@ pub fn cold_store(app_data: &Path, sha256: &str, bytes: &[u8]) -> Result<String>
     let compressed = zstd::encode_all(bytes, ZSTD_LEVEL)
         .map_err(|e| CoreError::Invalid(format!("could not compress the original: {e}")))?;
 
-    let mut file = std::fs::File::create(&path)?;
-    file.write_all(COLD_MAGIC)?;
-    file.write_all(&compressed)?;
-    file.sync_all()?;
+    // The magic is authenticated, so a sealed file cannot be relabelled as a
+    // plaintext one to get the reader to skip decryption.
+    let sealed = crypto::seal(key, COLD_MAGIC_SEALED, &compressed)?;
+
+    // Write beside the target and rename, so a crash mid-write cannot leave a
+    // half-written file that later fails to decrypt.
+    let temp = dir.join(format!("{name}.part"));
+    {
+        let mut file = std::fs::File::create(&temp)?;
+        file.write_all(COLD_MAGIC_SEALED)?;
+        file.write_all(&sealed)?;
+        file.sync_all()?;
+    }
+    std::fs::rename(&temp, &path)?;
     Ok(name)
 }
 
 /// Read an original back out, for "Download original".
-pub fn cold_read(app_data: &Path, cold_path: &str) -> Result<Vec<u8>> {
+pub fn cold_read(app_data: &Path, key: &SecretKey, cold_path: &str) -> Result<Vec<u8>> {
     let name = safe_name(cold_path)?;
     let bytes = std::fs::read(cold_dir(app_data).join(name))?;
-
-    if bytes.len() < COLD_MAGIC.len() || &bytes[..COLD_MAGIC.len()] != COLD_MAGIC {
+    if bytes.len() < 4 {
         return Err(CoreError::Invalid(
             "the stored original is not in a format this version understands".into(),
         ));
     }
-    zstd::decode_all(&bytes[COLD_MAGIC.len()..])
+
+    let (magic, rest) = bytes.split_at(4);
+    let compressed = match magic {
+        m if m == COLD_MAGIC_SEALED => crypto::open(key, COLD_MAGIC_SEALED, rest)?,
+        m if m == COLD_MAGIC_PLAIN => rest.to_vec(),
+        _ => {
+            return Err(CoreError::Invalid(
+                "the stored original is not in a format this version understands".into(),
+            ))
+        }
+    };
+
+    zstd::decode_all(&compressed[..])
         .map_err(|e| CoreError::Invalid(format!("the stored original could not be read: {e}")))
 }
 

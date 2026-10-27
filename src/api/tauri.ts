@@ -1,5 +1,13 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { AppInfo, Backend, NewTopic, Subject, Topic, TopicPatch } from "./types";
+import type {
+  AppInfo,
+  Backend,
+  LicenseStatus,
+  NewTopic,
+  Subject,
+  Topic,
+  TopicPatch,
+} from "./types";
 
 /**
  * The real backend. Every call goes through Tauri IPC — the WebView never
@@ -7,6 +15,11 @@ import type { AppInfo, Backend, NewTopic, Subject, Topic, TopicPatch } from "./t
  */
 export const tauriBackend: Backend = {
   appInfo: () => invoke<AppInfo>("app_info"),
+
+  licenseStatus: () => invoke<LicenseStatus>("license_status"),
+  eulaText: () => invoke<string>("eula_text"),
+  eulaAccept: () => invoke<LicenseStatus>("eula_accept"),
+  activate: (code) => invoke<LicenseStatus>("activate", { code }),
 
   subjectsList: (includeArchived) => invoke<Subject[]>("subjects_list", { includeArchived }),
   subjectGet: (id) => invoke<Subject>("subject_get", { id }),

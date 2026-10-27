@@ -2,6 +2,7 @@
 //! update check, and the end-to-end upload → cards → study → tomorrow path.
 
 use studybites_core::ai::{AiError, DistillRequest, DistilledNote, GeneratedCard, ProviderId};
+use studybites_core::crypto;
 use studybites_core::db::DEV_KEY;
 use studybites_core::embed::{self, Embedder, LexicalEmbedder};
 use studybites_core::fsrs::{self, Memory, Rating, State};
@@ -230,19 +231,29 @@ fn cold_storage_round_trips_and_refuses_path_traversal() {
     let original = b"the original lecture notes, byte for byte";
     let hash = files::sha256_hex(original);
 
-    let stored = files::cold_store(dir.path(), &hash, original).unwrap();
-    let read_back = files::cold_read(dir.path(), &stored).unwrap();
+    let keys = crypto::derive(&[7u8; 32], b"licence-secret");
+    let key = &keys.file;
+
+    let stored = files::cold_store(dir.path(), key, &hash, original).unwrap();
+    let read_back = files::cold_read(dir.path(), key, &stored).unwrap();
     assert_eq!(read_back, original, "the original must survive exactly");
 
     // The stored file must not be the plain original lying on disk.
     let on_disk = std::fs::read(files::cold_dir(dir.path()).join(&stored)).unwrap();
     assert_ne!(on_disk, original);
 
-    assert!(files::cold_read(dir.path(), "../../etc/passwd").is_err());
-    assert!(files::cold_read(dir.path(), "sub/dir.sbc").is_err());
+    // Another device derives another key, so the folder is worth nothing there.
+    let other = crypto::derive(&[8u8; 32], b"licence-secret");
+    assert!(
+        files::cold_read(dir.path(), &other.file, &stored).is_err(),
+        "a copied originals folder must not open on another machine"
+    );
+
+    assert!(files::cold_read(dir.path(), key, "../../etc/passwd").is_err());
+    assert!(files::cold_read(dir.path(), key, "sub/dir.sbc").is_err());
 
     files::cold_delete(dir.path(), &stored).unwrap();
-    assert!(files::cold_read(dir.path(), &stored).is_err());
+    assert!(files::cold_read(dir.path(), key, &stored).is_err());
 }
 
 // ---- provider router ----------------------------------------------------

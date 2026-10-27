@@ -786,3 +786,93 @@ kbd {
 .btn:active:not(:disabled) { transform: scale(0.985); }
 .btn { border-radius: var(--radius-sm); }
 
+
+/* ---- onboarding gates: agreement and activation ----------------------- */
+
+/* These own the window rather than sitting in the app shell: there is no
+   sidebar yet, and offering one would only invite looking for a way round. */
+.gate {
+  min-height: 100vh;
+  display: grid;
+  place-items: start center;
+  overflow-y: auto;
+  padding: clamp(var(--s-5), 6vh, var(--s-9)) var(--s-5) var(--s-8);
+  background: var(--bg);
+}
+
+.gate__inner {
+  width: 100%;
+  max-width: 58ch;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-5);
+}
+
+.gate__lede {
+  color: var(--text-muted);
+  font-size: var(--fs-lg);
+  line-height: var(--lh-read);
+  max-width: var(--measure);
+}
+
+/* The agreement scrolls inside its own frame, so the accept control stays
+   where the eye left it instead of being pushed off the page. */
+.gate__doc {
+  max-height: min(46vh, 420px);
+  overflow-y: auto;
+  padding: var(--s-5);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-read);
+}
+.gate__doc:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.gate__doc > * + * { margin-top: var(--s-4); }
+.gate__doc h2 { font-size: var(--fs-xl); }
+.gate__doc h3 { font-size: var(--fs-lg); margin-top: var(--s-5); }
+.gate__doc h4 { font-size: var(--fs-md); }
+.gate__doc ul { margin: 0; padding-left: var(--s-5); display: grid; gap: var(--s-2); }
+.gate__doc blockquote {
+  margin: 0;
+  padding-left: var(--s-4);
+  border-left: 2px solid var(--accent);
+  color: var(--text-muted);
+}
+.gate__doc code { font-family: var(--font-mono); font-size: 0.9em; }
+
+.gate__agree {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-3);
+  font-size: var(--fs-md);
+  cursor: pointer;
+}
+.gate__agree input { margin-top: 0.25em; }
+
+/* The request code is read aloud or copied, so it is set large, in tabular
+   figures, with the grouping the encoder put there left intact. */
+.gate__code {
+  font-family: var(--font-display);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  font-size: var(--fs-xl);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: var(--s-4) var(--s-5);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  word-break: break-all;
+}
+
+/* An activation code is long. A textarea means it can be pasted and read
+   back in full rather than scrolling inside a one-line box. */
+.gate__paste {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+  letter-spacing: 0.02em;
+  resize: vertical;
+  min-height: 5.5em;
+}

@@ -42,8 +42,29 @@ export interface AppInfo {
 }
 
 /** Everything the UI is allowed to ask the backend for. */
+/** Phase 3: what the onboarding screens and Settings need to know. */
+export interface LicenseStatus {
+  /** False in a build made without the licensing key; it runs unlocked. */
+  licensingEnabled: boolean;
+  unlocked: boolean;
+  eulaVersion: string;
+  eulaAccepted: boolean;
+  buyerName: string | null;
+  /** Shown on the activation screen, read out to the owner. */
+  requestCode: string | null;
+  /** Parts of this machine that differ from activation day. Advisory. */
+  deviceChanged: string[];
+  /** Set when the machine could not be identified at all. */
+  problem: string | null;
+}
+
 export interface Backend extends Phase2Backend {
   appInfo(): Promise<AppInfo>;
+
+  licenseStatus(): Promise<LicenseStatus>;
+  eulaText(): Promise<string>;
+  eulaAccept(): Promise<LicenseStatus>;
+  activate(code: string): Promise<LicenseStatus>;
 
   subjectsList(includeArchived: boolean): Promise<Subject[]>;
   subjectGet(id: number): Promise<Subject>;

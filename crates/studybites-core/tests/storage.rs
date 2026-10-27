@@ -1,4 +1,4 @@
-use studybites_core::db::DEV_KEY;
+use studybites_core::db::{Key, DEV_KEY};
 use studybites_core::error::CoreError;
 use studybites_core::{migrations, subjects, topics, Db, NewTopic};
 
@@ -18,7 +18,7 @@ fn migrations_bring_schema_to_current_version() {
             |r| r.get(0),
         )
         .unwrap();
-    assert_eq!(tables, 11, "all Section 5 tables exist");
+    assert_eq!(tables, 12, "the Section 5 tables, plus EULA acceptance");
 }
 
 #[test]
@@ -36,7 +36,7 @@ fn database_is_encrypted_and_rejects_the_wrong_key() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("sb.db");
     {
-        let db = Db::open(&path, "correct-horse").unwrap();
+        let db = Db::open(&path, Key::Passphrase("correct-horse")).unwrap();
         subjects::create(&db, "MTH 101").unwrap();
     }
 
@@ -49,12 +49,12 @@ fn database_is_encrypted_and_rejects_the_wrong_key() {
 
     // Phase 3 depends on this: a copied database cannot be opened elsewhere.
     assert!(matches!(
-        Db::open(&path, "wrong-key"),
+        Db::open(&path, Key::Passphrase("wrong-key")),
         Err(CoreError::Locked)
     ));
 
     // The right key still works.
-    let db = Db::open(&path, "correct-horse").unwrap();
+    let db = Db::open(&path, Key::Passphrase("correct-horse")).unwrap();
     assert_eq!(subjects::list(&db, false).unwrap().len(), 1);
 }
 

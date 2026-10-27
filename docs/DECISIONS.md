@@ -248,3 +248,110 @@ no token ships, and Tauri's signed updater can be used properly.
 `keyring` on Windows is DPAPI-backed. The WebView can ask *whether* a key is
 set and can set one; it can never read one back. Every provider call happens
 in Rust.
+
+### D24. The device id comes from `MachineGuid` alone
+
+Brief 8.1 asks for several hardware identifiers hashed together, with a
+threshold so that swapping one part does not lock anyone out. Taken
+literally that cannot work, because Brief 9 also makes `device_id` half the
+key material for the database: a *threshold* match says "close enough", but
+a key is either reproduced exactly or the data is gone. Any component that
+can drift cannot be in the key.
+
+So the two jobs are separated:
+
+* `device_id` = SHA-256(salt, `MachineGuid`). It survives a new disk, a new
+  CPU, more RAM and a new motherboard, and changes only when Windows itself
+  is reinstalled — at which point the database is gone anyway. This is what
+  the licence binds to and what the keys derive from.
+* The CPU, baseboard, BIOS and system-volume identifiers are still collected
+  and hashed, recorded at activation, and compared on each launch. They are
+  never key material. They drive one honest sentence in Settings when the
+  machine has changed, and nothing else.
+
+This meets the brief's actual goal — do not punish a hardware swap — better
+than thresholding would, because the tolerance is total rather than partial.
+
+### D25. The licence is stored outside the encrypted database
+
+It has to be: the database key is derived from the licence, so the licence
+must be readable before the database can be opened. It sits beside it as
+`license.txt`, in plain text, with the component profile in
+`activation.json`.
+
+Plain text is not a weakness here. The code is signed, so altering it only
+makes it fail verification, and it is bound to one machine, so copying it
+achieves nothing. Keeping it readable means a student who reinstalls can
+recover their own code from the folder instead of asking for it again.
+
+EULA acceptance does go in the database, as Brief 13 asks. The agreement is
+accepted before activation, so the timestamp waits in memory and is written
+the moment a database exists.
+
+### D26. Activation codes are compact binary, not JSON
+
+An Ed25519 signature is 64 bytes, which is already 103 characters of base32
+before any content. A JSON payload would have pushed a code past 300
+characters. The signed body is therefore a fixed binary layout — 42 bytes
+plus the buyer's name — giving a code of about 190 characters.
+
+The alphabet is Crockford base32: no I, L, O or U, decoding is
+case-insensitive, and I/L read as 1 while O reads as 0. A student reading a
+code off a phone screen cannot make the classic 1/I or 0/O mistakes. The
+request code going the other way is only 23 characters, short enough to read
+down a phone line.
+
+### D27. A build without the public key runs unlicensed, and says so
+
+The public key is compiled in from the `STUDYBITES_LICENSE_PUBKEY`
+repository secret, so no part of the key pair is ever in this repository.
+A build made without it — a local `cargo run`, or CI before the owner has
+generated a key — cannot verify anything.
+
+Such a build runs on the development key and states plainly in Settings that
+it is a development build. The alternative, refusing to start, would mean
+development and CI are blocked on a secret existing; pretending to be
+licensed would be worse still. Activation becomes mandatory the moment the
+secret is set, with no code change.
+
+### D28. Activating re-keys an existing database rather than replacing it
+
+Builds before licensing used the development key. Turning activation on
+would otherwise strand the subjects, cards and review history of anyone
+already using the app. `Db::open_or_rekey` notices a database that only
+opens with the old key and runs `PRAGMA rekey` to the derived key in place.
+
+### D29. Re-issuing a code must reproduce the same secret
+
+Brief 8.3 decides that reinstalling on the same device works with the same
+code. That requires more than accepting the old code: the licence secret is
+half the key material, so issuing a *fresh* secret for the same machine
+would derive a different database key and silently destroy the student's
+data.
+
+`license-tool issue` therefore looks the device up in its ledger and, if it
+has issued for that machine before, recovers the original secret out of the
+stored code rather than generating a new one. Issuing twice for the same
+machine and buyer produces a byte-identical code.
+
+### D30. One SQLCipher connection is held open for the life of the process
+
+SQLCipher reference-counts its crypto provider: the first keyed connection
+registers it, and closing the last one frees it. A process that opens and
+closes short-lived connections across threads can have one thread free the
+provider while another is attaching, which fails with `sqlcipher not
+initialized` and surfaces as a spurious `Locked`. This was seen once in CI,
+in the test suite, which does exactly that.
+
+A single keyed in-memory connection is now created once and never dropped,
+keeping the count above zero. It is never used for anything.
+
+Stated honestly: the failure does not reproduce on the development machine —
+50 runs of the affected binary passed both with and without the change — so
+this is reasoned from SQLCipher's lifecycle rather than confirmed against a
+reproduction. The cost is one idle connection, so it cannot make things
+worse, but it should not be called proven until CI stays green over time.
+
+Separately, `Db::prepare` no longer flattens every failure into `Locked`:
+only a failed read *after* keying means a wrong key. A cipher that refuses
+to start now reports its real error, which is what made this diagnosable.

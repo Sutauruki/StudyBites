@@ -58,12 +58,39 @@ jobs:
             echo "C:\Strawberry\perl\bin" >> $env:GITHUB_PATH
           }
 
+      # The licensing public key is compiled in from a repository secret, so
+      # the key pair never exists in this repository. Without the secret the
+      # build still succeeds and simply runs unlicensed, which keeps the app
+      # usable while the owner is setting the key up (Brief 8.4).
+      - name: Note the licensing mode
+        shell: pwsh
+        run: |
+          if ("${{ secrets.STUDYBITES_LICENSE_PUBKEY }}" -eq "") {
+            Write-Warning "STUDYBITES_LICENSE_PUBKEY is not set: this build will NOT require activation."
+          } else {
+            Write-Host "Licensing key present: this build requires activation."
+          }
+
       - name: Build the NSIS installer
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          STUDYBITES_LICENSE_PUBKEY: ${{ secrets.STUDYBITES_LICENSE_PUBKEY }}
         with:
           args: --bundles nsis
+
+      # The owner needs the admin tool as an .exe so that issuing a code does
+      # not require a Rust toolchain on their machine (Brief 8.4).
+      - name: Build the admin license tool
+        run: cargo build --release -p license-tool
+
+      - name: Upload the admin license tool
+        uses: actions/upload-artifact@v4
+        with:
+          name: license-tool
+          path: target/release/license-tool.exe
+          retention-days: 30
+          if-no-files-found: error
 
       - name: Collect the installer
         id: collect

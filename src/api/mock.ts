@@ -9,6 +9,7 @@ import type {
   NewTopic,
   ProviderInfo,
   QueueCounts,
+  LicenseStatus,
   QueueStatus,
   SchemeEntry,
   SessionSummary,
@@ -129,11 +130,52 @@ function tree(rows: Rows, subjectId: number): Topic[] {
 }
 
 /** A touch of latency so loading states get exercised during UI work. */
+/**
+ * The browser preview has no machine to fingerprint and no key to verify
+ * with, so it behaves exactly like a build made without a licensing key:
+ * already unlocked, and saying so rather than faking an activation.
+ */
+let mockLicense: LicenseStatus = {
+  licensingEnabled: false,
+  unlocked: true,
+  eulaVersion: "1.0",
+  eulaAccepted: false,
+  buyerName: null,
+  requestCode: "AD902-FAYFJ-HSGK6-N8G00-3ZN3",
+  deviceChanged: [],
+  problem: null,
+};
+
+const MOCK_EULA = `# StudyBites — End User Licence Agreement
+
+**Version 1.0**
+
+This is the browser preview, which ships a short stand-in. The real agreement
+is bundled with the Windows build and read from \`resources/EULA.md\`.
+
+StudyBites is licensed, not sold, for use on one activated device. Your study
+materials stay on your device. AI output can be wrong — check it against your
+course material.`;
+
 const tick = <T,>(value: T): Promise<T> =>
   new Promise((resolve) => setTimeout(() => resolve(value), 40));
 
 export const mockBackend: Backend = {
-  appInfo: () => tick({ version: "0.1.0-mock", phase: 1 } satisfies AppInfo),
+  appInfo: () => tick({ version: "0.1.0-mock", phase: 3 } satisfies AppInfo),
+
+  // The browser preview has no device to fingerprint, so it behaves like a
+  // build without a licensing key: unlocked, and honest about why.
+  licenseStatus: () => tick(mockLicense),
+  eulaText: () => tick(MOCK_EULA),
+  eulaAccept: () => {
+    mockLicense = { ...mockLicense, eulaAccepted: true };
+    return tick(mockLicense);
+  },
+  activate: (code: string) => {
+    if (code.trim().length < 20) throw "that activation code is not valid.";
+    mockLicense = { ...mockLicense, unlocked: true, buyerName: "Browser Preview" };
+    return tick(mockLicense);
+  },
 
   subjectsList: (includeArchived) => {
     const rows = read();

@@ -3,12 +3,14 @@ import {
   backend,
   errorText,
   isDesktop,
+  type LicenseStatus,
   type ProviderInfo,
   type QueueStatus,
   type UpdateStatus,
 } from "../api";
 import type { Theme } from "../App";
-import { Banner } from "../components/ui";
+import { Banner, Loading } from "../components/ui";
+import { Prose } from "./OnboardingPage";
 
 const THEMES: Array<{ value: Theme; label: string }> = [
   { value: "system", label: "Follow system" },
@@ -20,10 +22,12 @@ export function SettingsPage({
   theme,
   onThemeChange,
   version,
+  license,
 }: {
   theme: Theme;
   onThemeChange: (theme: Theme) => void;
   version: string;
+  license: LicenseStatus;
 }) {
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [queue, setQueue] = useState<QueueStatus | null>(null);
@@ -110,6 +114,8 @@ export function SettingsPage({
       )}
 
       <UpdateSection />
+
+      <AboutSection license={license} />
 
       <section className="card card--pad">
         <div className="stack">
@@ -358,6 +364,71 @@ function UpdateSection() {
               )}
             </Banner>
           )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * Settings → About (Brief 13): who this copy is licensed to, and the
+ * agreement, read-only.
+ */
+function AboutSection({ license }: { license: LicenseStatus }) {
+  const [eula, setEula] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open || eula !== null) return;
+    void backend
+      .eulaText()
+      .then(setEula)
+      .catch((err) => setError(errorText(err)));
+  }, [open, eula]);
+
+  return (
+    <section className="stack">
+      <span className="label">About</span>
+      <div className="card card--pad">
+        <div className="stack">
+          {license.licensingEnabled ? (
+            <p className="muted">
+              Licensed to <strong>{license.buyerName ?? "this device"}</strong>, for this computer
+              only.
+            </p>
+          ) : (
+            <Banner kind="info">
+              This is a development build: it was made without a licensing key, so it runs without
+              activation and its database uses the development key. It is not a copy to sell.
+            </Banner>
+          )}
+
+          {license.deviceChanged.length > 0 && (
+            <p className="muted">
+              Some parts of this computer have changed since activation (
+              {license.deviceChanged.join(", ")}). That is fine — your licence still works. It is
+              noted only so a real problem is easier to recognise.
+            </p>
+          )}
+
+          <p className="muted">Agreement version {license.eulaVersion}, accepted on this device.</p>
+
+          <div className="action">
+            <button className="btn" onClick={() => setOpen((o) => !o)}>
+              {open ? "Hide the agreement" : "Read the agreement"}
+            </button>
+          </div>
+
+          {error && <Banner kind="error">{error}</Banner>}
+          {open &&
+            (eula === null && !error ? (
+              <Loading label="Opening the agreement…" />
+            ) : (
+              <article className="gate__doc selectable" tabIndex={0}>
+                <Prose markdown={eula ?? ""} />
+              </article>
+            ))}
         </div>
       </div>
     </section>

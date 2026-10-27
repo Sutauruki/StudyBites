@@ -68,6 +68,9 @@ pub fn spawn(app: AppHandle, signal: Arc<Signal>) {
 /// Push the current queue counts to the UI.
 fn report(app: &AppHandle) {
     if let Some(state) = app.try_state::<AppState>() {
+        if !state.is_unlocked() {
+            return;
+        }
         if let Ok(db) = state.db.lock() {
             if let Ok(counts) = jobs::counts(&db) {
                 crate::phase2::emit_progress(app, &counts);
@@ -82,6 +85,11 @@ fn drain(app: &AppHandle) {
     let Some(state) = app.try_state::<AppState>() else {
         return;
     };
+    // Nothing is processed before activation: until then the handle behind
+    // the mutex is the empty placeholder, not the student's database.
+    if !state.is_unlocked() {
+        return;
+    }
 
     loop {
         // Keys and the chosen model are re-read each pass, so changing them
