@@ -9,6 +9,7 @@ import {
   type TopicMastery,
 } from "../api";
 import { Banner, Empty, Loading, Modal } from "../components/ui";
+import { SchemeImportDialog } from "./SchemeImportDialog";
 import { UploadDialog } from "./UploadDialog";
 
 /**
@@ -35,6 +36,7 @@ export function SubjectPage({
   const [adding, setAdding] = useState<{ parentId: number | null } | null>(null);
   const [editing, setEditing] = useState<Topic | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [importing, setImporting] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -82,6 +84,9 @@ export function SubjectPage({
           </p>
         </div>
         <div className="row">
+          <button className="btn" onClick={() => setImporting(true)}>
+            Import scheme
+          </button>
           <button className="btn" onClick={() => setAdding({ parentId: null })}>
             Add topic
           </button>
@@ -112,12 +117,14 @@ export function SubjectPage({
           title="No scheme of work yet"
           body="Add the topics your lecturer listed, in order, with week numbers if you have them. You can also skip this entirely — topics can be created later as you upload material."
           action={
-            <button
-              className="btn btn--primary btn--big"
-              onClick={() => setAdding({ parentId: null })}
-            >
-              Add the first topic
-            </button>
+            <div className="row row--wrap" style={{ justifyContent: "center" }}>
+              <button className="btn btn--big" onClick={() => setAdding({ parentId: null })}>
+                Add topics by hand
+              </button>
+              <button className="btn btn--primary btn--big" onClick={() => setImporting(true)}>
+                Import a scheme of work
+              </button>
+            </div>
           }
         />
       ) : (
@@ -146,6 +153,18 @@ export function SubjectPage({
             await backend.topicCreate({ subjectId, parentId: adding.parentId, title, week });
             setAdding(null);
             await refresh();
+          }}
+        />
+      )}
+
+      {importing && (
+        <SchemeImportDialog
+          subjectId={subjectId}
+          hasTopics={(topics ?? []).length > 0}
+          onClose={() => setImporting(false)}
+          onSaved={(count) => {
+            setNotice(`Added ${count} topic${count === 1 ? "" : "s"} from your scheme of work.`);
+            void refresh();
           }}
         />
       )}

@@ -526,3 +526,37 @@ select.input { cursor: pointer; }
   .study__grades .btn { flex: 1 1 45%; }
   h1 { font-size: var(--fs-xl); }
 }
+
+/* ---- scheme import --------------------------------------------------- */
+
+.modal--wide { max-width: 620px; }
+
+.scheme { display: flex; flex-direction: column; }
+
+.scheme__row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-2);
+  padding: var(--s-3) 0;
+  border-bottom: 1px solid var(--border);
+}
+.scheme__row:last-child { border-bottom: none; }
+
+/* Reorder arrows stack tightly so they read as one control. */
+.scheme__order { display: flex; flex-direction: column; gap: 2px; padding-top: 2px; }
+.scheme__order .btn { min-height: 16px; padding: 0 var(--s-1); line-height: 1; }
+
+.scheme__fields { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: var(--s-1); }
+
+.scheme__subs {
+  font-size: var(--fs-xs);
+  color: var(--text-faint);
+  padding-left: var(--s-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 700px) {
+  .scheme__row { flex-wrap: wrap; }
+  .scheme__fields { flex: 1 1 100%; }
+}
