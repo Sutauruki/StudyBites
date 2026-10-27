@@ -117,3 +117,28 @@ changes (Brief §11.1).
 
 The Windows job warns, rather than fails, when the installer exceeds the 40 MB
 budget — Phase 1 has no embedding model yet, so a hard failure would be noise.
+
+### D14. SQLCipher vendors its own OpenSSL
+
+`rusqlite`'s `bundled-sqlcipher` feature compiles SQLCipher from source but
+links the *system* OpenSSL. That works on Linux and fails on a GitHub
+`windows-latest` runner, which has no OpenSSL for the build script to find:
+
+```
+Missing environment variable OPENSSL_DIR or OPENSSL_DIR is not set
+```
+
+`libsqlite3-sys` exposes only two crypto routes — system OpenSSL, or
+`bundled-sqlcipher-vendored-openssl`, which builds OpenSSL from source as part
+of the crate. (SQLCipher itself can use LibTomCrypt, and `sqlcipher-src` even
+bundles it, but no feature exposes that choice.)
+
+We use the vendored route on every platform. Pointing `OPENSSL_DIR` at whatever
+the runner image happens to ship would work until the image changed; vendoring
+makes the build depend on nothing outside the lockfile, which matters for a
+project whose builds the owner cannot debug locally.
+
+The costs, accepted: a slower first build (OpenSSL compiles from source, then
+`rust-cache` keeps it warm) and a few MB of static OpenSSL in the binary.
+Building OpenSSL on Windows needs NASM and Perl — the runner image has both,
+and the workflow installs them if that ever stops being true.

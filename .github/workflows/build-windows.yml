@@ -40,6 +40,24 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      # SQLCipher is built from source with vendored OpenSSL, so there is no
+      # dependency on an OpenSSL installation being present. Building OpenSSL
+      # on Windows does need NASM and Perl; the runner image ships both, so
+      # this only installs them if that ever changes.
+      - name: Ensure the OpenSSL build tools are present
+        shell: pwsh
+        run: |
+          if (-not (Get-Command nasm -ErrorAction SilentlyContinue)) {
+            Write-Host "NASM missing, installing"
+            choco install nasm -y --no-progress
+            echo "C:\Program Files\NASM" >> $env:GITHUB_PATH
+          }
+          if (-not (Get-Command perl -ErrorAction SilentlyContinue)) {
+            Write-Host "Perl missing, installing"
+            choco install strawberryperl -y --no-progress
+            echo "C:\Strawberry\perl\bin" >> $env:GITHUB_PATH
+          }
+
       - name: Build the NSIS installer
         uses: tauri-apps/tauri-action@v0
         env:
