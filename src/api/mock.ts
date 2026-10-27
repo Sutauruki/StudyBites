@@ -1,4 +1,25 @@
-import type { AppInfo, Backend, NewTopic, Subject, Topic, TopicPatch } from "./types";
+import type {
+  AppInfo,
+  Backend,
+  Card,
+  DueCounts,
+  ExplainResult,
+  GradeResult,
+  Material,
+  NewTopic,
+  ProviderInfo,
+  QueueCounts,
+  QueueStatus,
+  SchemeEntry,
+  SessionSummary,
+  StudySession,
+  Subject,
+  Topic,
+  TopicMastery,
+  TopicMatch,
+  TopicPatch,
+  UpdateStatus,
+} from "./types";
 
 /**
  * Browser-only stand-in for the Rust backend (Brief 11.3), so the UI can be
@@ -16,14 +37,24 @@ interface Rows {
   subjects: Array<Omit<Subject, "topicCount">>;
   topics: Array<Omit<Topic, "children">>;
   settings: Record<string, string>;
+  materials: Material[];
+  cards: Array<Card & { due: number; isNewCard: boolean }>;
 }
 
-const empty = (): Rows => ({ nextId: 1, subjects: [], topics: [], settings: {} });
+const empty = (): Rows => ({
+  nextId: 1,
+  subjects: [],
+  topics: [],
+  settings: {},
+  materials: [],
+  cards: [],
+});
 
 function read(): Rows {
   try {
     const raw = localStorage.getItem(STORE_KEY);
-    return raw ? (JSON.parse(raw) as Rows) : empty();
+    // Merge with `empty()` so data saved before Phase 2 still loads.
+    return raw ? { ...empty(), ...(JSON.parse(raw) as Rows) } : empty();
   } catch {
     return empty();
   }
@@ -266,4 +297,260 @@ export const mockBackend: Backend = {
     write(rows);
     return tick(undefined);
   },
+
+  // ---- Phase 2 ----------------------------------------------------------
+  //
+  // The browser mock cannot read files or call an AI, so uploads and the
+  // AI-assisted steps report that plainly rather than pretending. Studying
+  // works fully, against cards the mock seeds on first use, so the session
+  // UI can be built and checked without the desktop shell.
+
+  materialUpload: () =>
+    Promise.reject("Uploading needs the desktop app — this is the browser preview."),
+  filePreviewText: () =>
+    Promise.reject("Reading files needs the desktop app — this is the browser preview."),
+  materialsList: (subjectId) =>
+    tick(read().materials.filter((m) => m.subjectId === subjectId)),
+  materialSetTopic: (id, topicId) => {
+    const rows = read();
+    const material = rows.materials.find((m) => m.id === id);
+    if (!material) throw `material ${id} was not found`;
+    material.topicId = topicId;
+    write(rows);
+    return tick(material);
+  },
+  materialDelete: (id) => {
+    const rows = read();
+    rows.materials = rows.materials.filter((m) => m.id !== id);
+    write(rows);
+    return tick(undefined);
+  },
+  materialSaveOriginal: () =>
+    Promise.reject("Saving files needs the desktop app — this is the browser preview."),
+
+  topicSuggest: () =>
+    tick<TopicMatch>({
+      index: null,
+      confidence: 0,
+      reason: "Topic matching needs an AI key, which the browser preview does not have.",
+    }),
+  schemeParse: () =>
+    Promise.reject("Parsing a scheme needs an AI key — this is the browser preview."),
+  schemeSave: (subjectId, entries: SchemeEntry[]) => {
+    const rows = read();
+    for (const entry of entries) {
+      if (!entry.title.trim()) continue;
+      const parent = {
+        id: rows.nextId++,
+        subjectId,
+        parentId: null,
+        title: entry.title.trim(),
+        week: entry.week,
+        position: siblings(rows, subjectId, null).length,
+        isOffScheme: false,
+        supportsTopicId: null,
+        isPreview: false,
+      };
+      rows.topics.push(parent);
+      for (const sub of entry.subtopics ?? []) {
+        if (!sub.trim()) continue;
+        rows.topics.push({
+          id: rows.nextId++,
+          subjectId,
+          parentId: parent.id,
+          title: sub.trim(),
+          week: null,
+          position: siblings(rows, subjectId, parent.id).length,
+          isOffScheme: false,
+          supportsTopicId: null,
+          isPreview: false,
+        });
+      }
+    }
+    write(rows);
+    return tick(tree(rows, subjectId));
+  },
+  explain: () =>
+    tick<ExplainResult>({
+      answer:
+        "Explanations need an AI key. In the desktop app this answers from your own notes only.",
+      sources: [],
+    }),
+
+  dueCounts: (subjectId) => {
+    const rows = seedCards(read(), subjectId);
+    const mine = cardsFor(rows, subjectId);
+    const now = Date.now();
+    return tick<DueCounts>({
+      due: mine.filter((c) => !c.isNewCard && c.due <= now).length,
+      new: mine.filter((c) => c.isNewCard).length,
+    });
+  },
+  sessionStart: (subjectId, minutes, newLimit) => {
+    const rows = seedCards(read(), subjectId);
+    write(rows);
+    const now = Date.now();
+    const mine = cardsFor(rows, subjectId);
+    const due = mine.filter((c) => !c.isNewCard && c.due <= now);
+    const fresh = mine.filter((c) => c.isNewCard).slice(0, newLimit ?? 10);
+    const chosen = [...due, ...fresh];
+    return tick<StudySession>({
+      id: 1,
+      subjectId,
+      plannedMinutes: minutes,
+      dueCount: due.length,
+      newCount: fresh.length,
+      cards: chosen.map((c) => ({
+        card: c,
+        isNew: c.isNewCard,
+        topicTitle: read().topics.find((t) => t.id === c.topicId)?.title ?? null,
+      })),
+    });
+  },
+  sessionGrade: (_sessionId, cardId, rating) => {
+    const rows = read();
+    const card = rows.cards.find((c) => c.id === cardId);
+    // Roughly mirrors FSRS: a failure returns soon, success pushes out.
+    const days = rating === 1 ? 0 : rating === 2 ? 1 : rating === 3 ? 3 : 7;
+    if (card) {
+      card.isNewCard = false;
+      card.due = Date.now() + days * 86_400_000;
+      write(rows);
+    }
+    return tick<GradeResult>({
+      cardId,
+      due: new Date(Date.now() + days * 86_400_000).toISOString(),
+      intervalDays: days,
+      state: rating === 1 ? "learning" : "review",
+    });
+  },
+  sessionEnd: (sessionId) =>
+    tick<SessionSummary>({
+      sessionId,
+      cardsDone: 0,
+      topicsTouched: [],
+      dueTomorrow: 0,
+      minutes: 10,
+    }),
+  mastery: (subjectId) => {
+    const rows = read();
+    return tick<TopicMastery[]>(
+      rows.topics
+        .filter((t) => t.subjectId === subjectId)
+        .map((t) => {
+          const mine = rows.cards.filter((c) => c.topicId === t.id);
+          const studied = mine.filter((c) => !c.isNewCard).length;
+          return {
+            topicId: t.id,
+            title: t.title,
+            totalCards: mine.length,
+            studiedCards: studied,
+            mastery: mine.length ? studied / mine.length : 0,
+            dueNow: mine.filter((c) => !c.isNewCard && c.due <= Date.now()).length,
+          };
+        }),
+    );
+  },
+
+  queueStatus: () =>
+    tick<QueueStatus>({
+      counts: { queued: 0, running: 0, done: 0, failed: 0, paused: 0 },
+      quota: [],
+      resumesAt: null,
+    }),
+  queueRetry: () =>
+    tick<QueueCounts>({ queued: 0, running: 0, done: 0, failed: 0, paused: 0 }),
+
+  providersList: () =>
+    tick<ProviderInfo[]>([
+      {
+        id: "gemini",
+        label: "Google Gemini",
+        configured: false,
+        helpUrl: "https://aistudio.google.com/apikey",
+        defaultModel: "gemini-2.0-flash",
+      },
+      {
+        id: "groq",
+        label: "Groq",
+        configured: false,
+        helpUrl: "https://console.groq.com/keys",
+        defaultModel: "llama-3.3-70b-versatile",
+      },
+      {
+        id: "openrouter",
+        label: "OpenRouter",
+        configured: false,
+        helpUrl: "https://openrouter.ai/keys",
+        defaultModel: "meta-llama/llama-3.3-70b-instruct:free",
+      },
+    ]),
+  providerKeySet: () =>
+    Promise.reject("Keys are stored in the OS keychain, which the browser preview has no access to."),
+  githubTokenSet: () =>
+    Promise.reject("Keys are stored in the OS keychain, which the browser preview has no access to."),
+  githubTokenPresent: () => tick(false),
+  updateCheck: () =>
+    tick<UpdateStatus>({
+      currentVersion: "0.1.0-mock",
+      latestVersion: null,
+      updateAvailable: false,
+      downloadUrl: null,
+      notes: null,
+      skippedReason: "Update checking only runs in the desktop app.",
+    }),
+
+  pickFile: () => tick(null),
+  pickSavePath: () => tick(null),
+  openUrl: async (url) => {
+    window.open(url, "_blank", "noopener,noreferrer");
+  },
 };
+
+/** Cards belonging to a subject, through their topic. */
+function cardsFor(rows: Rows, subjectId: number | null) {
+  if (subjectId === null) return rows.cards;
+  const topicIds = new Set(
+    rows.topics.filter((t) => t.subjectId === subjectId).map((t) => t.id),
+  );
+  return rows.cards.filter((c) => c.topicId !== null && topicIds.has(c.topicId));
+}
+
+/**
+ * Give a subject a few sample cards the first time it is studied, so the
+ * session UI has something to show in the browser. Marked clearly as sample
+ * content; the desktop app never does this.
+ */
+function seedCards(rows: Rows, subjectId: number | null): Rows {
+  if (subjectId === null || cardsFor(rows, subjectId).length > 0) return rows;
+  const topic = rows.topics.find((t) => t.subjectId === subjectId);
+  if (!topic) return rows;
+
+  const samples: Card["payload"][] = [
+    { kind: "flash", front: "Sample card: what is this screen for?", back: "Trying the study flow." },
+    {
+      kind: "mcq",
+      question: "Sample question: which grade means you forgot?",
+      options: ["Again", "Hard", "Good", "Easy"],
+      answer: 0,
+      explanation: "Again sends the card back round in this session.",
+    },
+    { kind: "short", prompt: "Sample prompt: say anything, then reveal.", answer: "Any answer." },
+  ];
+  for (const payload of samples) {
+    rows.cards.push({
+      id: rows.nextId++,
+      noteId: null,
+      topicId: topic.id,
+      payload,
+      isPreview: false,
+      retired: false,
+      createdAt: new Date().toISOString(),
+      due: Date.now(),
+      isNewCard: true,
+    });
+  }
+  write(rows);
+  return rows;
+}
+

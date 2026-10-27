@@ -42,7 +42,7 @@ export interface AppInfo {
 }
 
 /** Everything the UI is allowed to ask the backend for. */
-export interface Backend {
+export interface Backend extends Phase2Backend {
   appInfo(): Promise<AppInfo>;
 
   subjectsList(includeArchived: boolean): Promise<Subject[]>;
@@ -65,4 +65,183 @@ export interface Backend {
 
   settingGet(key: string): Promise<string | null>;
   settingSet(key: string, value: string): Promise<void>;
+}
+
+// ---- Phase 2 ------------------------------------------------------------
+
+export interface Material {
+  id: number;
+  subjectId: number;
+  topicId: number | null;
+  originalFilename: string;
+  mime: string;
+  size: number;
+  sha256: string;
+  coldPath: string | null;
+  uploadedAt: string;
+  status: "queued" | "processing" | "done" | "failed" | "paused";
+  error: string | null;
+  noteCount: number;
+  cardCount: number;
+}
+
+export interface Accepted {
+  material: Material;
+  chunkCount: number;
+  duplicateOf: number | null;
+}
+
+export type CardPayload =
+  | { kind: "flash"; front: string; back: string }
+  | { kind: "mcq"; question: string; options: string[]; answer: number; explanation: string }
+  | { kind: "short"; prompt: string; answer: string };
+
+export interface Card {
+  id: number;
+  noteId: number | null;
+  topicId: number | null;
+  payload: CardPayload;
+  isPreview: boolean;
+  retired: boolean;
+  createdAt: string;
+}
+
+export interface SessionCard {
+  card: Card;
+  isNew: boolean;
+  topicTitle: string | null;
+}
+
+export interface StudySession {
+  id: number;
+  subjectId: number | null;
+  plannedMinutes: number;
+  cards: SessionCard[];
+  dueCount: number;
+  newCount: number;
+}
+
+export interface GradeResult {
+  cardId: number;
+  due: string;
+  intervalDays: number;
+  state: "new" | "learning" | "review" | "relearning";
+}
+
+export interface SessionSummary {
+  sessionId: number;
+  cardsDone: number;
+  topicsTouched: string[];
+  dueTomorrow: number;
+  minutes: number;
+}
+
+export interface DueCounts {
+  due: number;
+  new: number;
+}
+
+export interface TopicMastery {
+  topicId: number;
+  title: string;
+  totalCards: number;
+  studiedCards: number;
+  mastery: number;
+  dueNow: number;
+}
+
+export interface TopicMatch {
+  index: number | null;
+  confidence: number;
+  reason: string;
+}
+
+export interface SchemeEntry {
+  title: string;
+  week: number | null;
+  subtopics: string[];
+}
+
+export interface QueueCounts {
+  queued: number;
+  running: number;
+  done: number;
+  failed: number;
+  paused: number;
+}
+
+export interface QuotaUsage {
+  provider: string;
+  date: string;
+  requests: number;
+  tokens: number;
+  exhaustedUntil: string | null;
+}
+
+export interface QueueStatus {
+  counts: QueueCounts;
+  quota: QuotaUsage[];
+  resumesAt: string | null;
+}
+
+export interface ProviderInfo {
+  id: string;
+  label: string;
+  configured: boolean;
+  helpUrl: string;
+  defaultModel: string;
+}
+
+export interface ExplainResult {
+  answer: string;
+  sources: string[];
+}
+
+export interface UpdateStatus {
+  currentVersion: string;
+  latestVersion: string | null;
+  updateAvailable: boolean;
+  downloadUrl: string | null;
+  notes: string | null;
+  skippedReason: string | null;
+}
+
+/** Phase 2 additions to the backend surface. */
+export interface Phase2Backend {
+  materialUpload(subjectId: number, topicId: number | null, path: string): Promise<Accepted>;
+  filePreviewText(path: string): Promise<string>;
+  materialsList(subjectId: number): Promise<Material[]>;
+  materialSetTopic(id: number, topicId: number | null): Promise<Material>;
+  materialDelete(id: number): Promise<void>;
+  materialSaveOriginal(id: number, destination: string): Promise<string>;
+
+  topicSuggest(subjectId: number, text: string): Promise<TopicMatch>;
+  schemeParse(text: string): Promise<SchemeEntry[]>;
+  schemeSave(subjectId: number, entries: SchemeEntry[]): Promise<Topic[]>;
+  explain(subjectId: number, question: string): Promise<ExplainResult>;
+
+  dueCounts(subjectId: number | null): Promise<DueCounts>;
+  sessionStart(subjectId: number | null, minutes: number, newLimit?: number): Promise<StudySession>;
+  sessionGrade(
+    sessionId: number | null,
+    cardId: number,
+    rating: number,
+    elapsedMs: number,
+  ): Promise<GradeResult>;
+  sessionEnd(sessionId: number): Promise<SessionSummary>;
+  mastery(subjectId: number): Promise<TopicMastery[]>;
+
+  queueStatus(): Promise<QueueStatus>;
+  queueRetry(): Promise<QueueCounts>;
+
+  providersList(): Promise<ProviderInfo[]>;
+  providerKeySet(provider: string, key: string): Promise<void>;
+  githubTokenSet(token: string): Promise<void>;
+  githubTokenPresent(): Promise<boolean>;
+  updateCheck(): Promise<UpdateStatus>;
+
+  /** Open the OS file picker; null when cancelled. */
+  pickFile(): Promise<string | null>;
+  pickSavePath(suggested: string): Promise<string | null>;
+  openUrl(url: string): Promise<void>;
 }

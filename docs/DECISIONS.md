@@ -167,3 +167,84 @@ So the collect step now emits forward slashes, and both release steps set
 broken upload into a passing build — the kind of failure that costs a whole
 round trip to notice.
 
+
+## Phase 2 — Ingestion, AI and studying
+
+### D16. FSRS is implemented directly, not taken from the `fsrs` crate
+
+The crate pulls 66 dependencies including `ndarray` and `rayon`, because it
+also *trains* FSRS parameters from a review history. StudyBites only
+schedules, with the published defaults, so the training half would be weight
+and heat on a dual-core laptop for nothing. The brief allows "a port of
+ts-fsrs logic"; `fsrs.rs` is that port, about 150 lines and no dependencies.
+
+Revisit if per-user parameter optimisation is ever wanted — that is the one
+thing the crate buys.
+
+### D17. Embeddings are lexical for now, behind an `Embedder` trait
+
+The brief asks for a bundled `all-MiniLM-L6-v2` ONNX model. That is ~23 MB
+plus an ONNX runtime and a tokenizer, against a 2.8 MB installer, and it is
+the one component that could not be verified on Windows from the development
+container — immediately after three rounds of Windows build failures.
+
+What is implemented is the storage and search architecture the brief
+specifies exactly: vectors as BLOBs, brute-force cosine similarity in Rust,
+retrieval scoped to one subject. The vectors come from `LexicalEmbedder`, a
+deterministic hashed bag-of-words with sub-linear weighting and a light
+stemmer. Good enough to pull the right handful of notes from one subject's
+few hundred, and it needs no model and no new dependency.
+
+`Embedder` is the seam. Swapping in MiniLM later is one new impl plus a
+re-embed; no schema change, no migration. **This is the one part of Phase 2
+that ships lighter than the brief asks, and it is a deliberate trade.**
+
+### D18. HTTP is `ureq` with rustls, not `reqwest`
+
+`ureq` is blocking, which suits a background worker thread, and far smaller.
+rustls means the HTTP stack needs no system TLS — and crucially does not drag
+in a second OpenSSL alongside the one SQLCipher vendors (D14).
+
+### D19. The provider layer is tested without a network
+
+`providers::Http` is a trait; the real impl wraps `ureq`, and the tests use
+canned responses. That is what makes it possible to test quota fallback,
+the single retry on a garbled reply, and the rule that a known-exhausted
+provider is never called — none of which could be tested against live free
+tiers without burning the daily allowance.
+
+### D20. One worker thread, woken on demand
+
+Free tiers are rate-limited per minute, so parallel workers would only trip
+the limits sooner. A single thread drains the queue and emits progress
+events; the window never blocks. Jobs left `running` by a crash are requeued
+at startup.
+
+### D21. A quota pause is not a failure
+
+When every provider is out, the job is parked until the reset time and the
+attempt is given back, so waiting on a free tier never burns a retry or
+marks an upload failed. Studying keeps working entirely offline meanwhile —
+nothing in the study loop touches the network.
+
+### D22. Update checking notifies, never installs
+
+The owner chose notify-only. Worth recording why the obvious alternative
+does not work: the repository is private, so even *reading* its releases
+needs a token, and Tauri's updater would need that token inside the binary,
+where anyone who buys a copy could extract it. That contradicts Brief 7.2
+and undermines Section 8.
+
+So the check uses the user's own GitHub token from the OS keychain, exactly
+like the AI keys. No token means update checks are simply off, explained in
+Settings. Nothing is ever downloaded or installed automatically.
+
+If auto-update is wanted later, the clean route is a second, public
+repository holding only installers and a manifest — source stays private,
+no token ships, and Tauri's signed updater can be used properly.
+
+### D23. Keys live in the OS keychain and never reach the frontend
+
+`keyring` on Windows is DPAPI-backed. The WebView can ask *whether* a key is
+set and can set one; it can never read one back. Every provider call happens
+in Rust.

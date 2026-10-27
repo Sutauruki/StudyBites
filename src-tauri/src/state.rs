@@ -10,6 +10,8 @@ use tauri::{AppHandle, Manager};
 
 pub struct AppState {
     pub db: Mutex<Db>,
+    /// Where cold storage lives. Resolved once, so every caller agrees.
+    pub app_data: std::path::PathBuf,
 }
 
 impl AppState {
@@ -23,7 +25,12 @@ impl AppState {
             .app_data_dir()
             .map_err(|e| CoreError::Invalid(format!("no app data directory: {e}")))?;
         let db = Db::open(dir.join("studybites.db"), DEV_KEY)?;
-        Ok(Self { db: Mutex::new(db) })
+        // Anything left mid-flight by a crash goes back in the queue.
+        let _ = studybites_core::jobs::requeue_stuck(&db);
+        Ok(Self {
+            db: Mutex::new(db),
+            app_data: dir,
+        })
     }
 }
 

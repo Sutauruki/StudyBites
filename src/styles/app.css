@@ -279,3 +279,89 @@ p { margin: 0; }
   border-radius: 999px;
   padding: 1px var(--s-2);
 }
+
+/* ---- study session --------------------------------------------------- */
+
+.study__bar { display: flex; align-items: center; gap: var(--s-3); }
+
+.study__clock {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+
+.study__card {
+  padding: var(--s-7) var(--s-6);
+  min-height: 220px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--s-5);
+}
+
+/* Cards are the one place type gets large and generous (Brief 4). */
+.study__prompt {
+  font-size: var(--fs-card);
+  line-height: 1.4;
+  text-align: center;
+}
+
+.study__answer {
+  font-size: var(--fs-lg);
+  line-height: 1.5;
+  text-align: center;
+  color: var(--text);
+  border-top: 1px solid var(--border);
+  padding-top: var(--s-5);
+}
+
+.study__options { display: flex; flex-direction: column; gap: var(--s-2); }
+
+.study__option { text-align: left; padding: var(--s-3) var(--s-4); }
+.study__option:disabled { opacity: 1; cursor: default; }
+.study__option--correct { border-color: var(--ok); color: var(--ok); font-weight: 600; }
+.study__option--wrong { border-color: var(--danger); color: var(--danger); }
+
+.study__grades { display: flex; gap: var(--s-2); }
+.study__grades .btn { flex: 1; padding: var(--s-4) var(--s-2); }
+
+/* ---- home ------------------------------------------------------------ */
+
+.bite {
+  padding: var(--s-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-5);
+}
+
+/* ---- mastery bars ---------------------------------------------------- */
+
+.mastery { display: flex; flex-direction: column; gap: var(--s-1); padding: var(--s-2) 0; }
+
+.mastery__label {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s-3);
+  font-size: var(--fs-sm);
+}
+
+.mastery__track {
+  height: 6px;
+  background: var(--surface-2);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.mastery__fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 3px;
+  transition: width var(--t-base);
+}
+
+/* Narrow windows: rows stop fighting for space. */
+@media (max-width: 680px) {
+  .list__item { flex-wrap: wrap; }
+  .study__grades { flex-wrap: wrap; }
+  .study__grades .btn { min-width: 45%; }
+}

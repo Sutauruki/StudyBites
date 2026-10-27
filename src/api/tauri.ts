@@ -31,4 +31,56 @@ export const tauriBackend: Backend = {
 
   settingGet: (key) => invoke<string | null>("setting_get", { key }),
   settingSet: (key, value) => invoke<void>("setting_set", { key, value }),
+
+  // ---- Phase 2 ----------------------------------------------------------
+
+  materialUpload: (subjectId, topicId, path) =>
+    invoke("material_upload", { subjectId, topicId, path }),
+  filePreviewText: (path) => invoke("file_preview_text", { path }),
+  materialsList: (subjectId) => invoke("materials_list", { subjectId }),
+  materialSetTopic: (id, topicId) =>
+    invoke("material_set_topic", { id, topicId }),
+  materialDelete: (id) => invoke("material_delete", { id }),
+  materialSaveOriginal: (id, destination) =>
+    invoke("material_save_original", { id, destination }),
+
+  topicSuggest: (subjectId, text) => invoke("topic_suggest", { subjectId, text }),
+  schemeParse: (text) => invoke("scheme_parse", { text }),
+  schemeSave: (subjectId, entries) => invoke("scheme_save", { subjectId, entries }),
+  explain: (subjectId, question) => invoke("explain", { subjectId, question }),
+
+  dueCounts: (subjectId) => invoke("due_counts", { subjectId }),
+  sessionStart: (subjectId, minutes, newLimit) =>
+    invoke("session_start", { subjectId, minutes, newLimit: newLimit ?? null }),
+  sessionGrade: (sessionId, cardId, rating, elapsedMs) =>
+    invoke("session_grade", { sessionId, cardId, rating, elapsedMs }),
+  sessionEnd: (sessionId) => invoke("session_end", { sessionId }),
+  mastery: (subjectId) => invoke("mastery", { subjectId }),
+
+  queueStatus: () => invoke("queue_status"),
+  queueRetry: () => invoke("queue_retry"),
+
+  providersList: () => invoke("providers_list"),
+  providerKeySet: (provider, key) => invoke("provider_key_set", { provider, key }),
+  githubTokenSet: (token) => invoke("github_token_set", { token }),
+  githubTokenPresent: () => invoke("github_token_present"),
+  updateCheck: () => invoke("update_check"),
+
+  pickFile: async () => {
+    const { open } = await import("@tauri-apps/plugin-dialog");
+    const picked = await open({
+      multiple: false,
+      directory: false,
+      filters: [{ name: "Notes", extensions: ["pdf", "docx", "txt", "md"] }],
+    });
+    return typeof picked === "string" ? picked : null;
+  },
+  pickSavePath: async (suggested) => {
+    const { save } = await import("@tauri-apps/plugin-dialog");
+    return (await save({ defaultPath: suggested })) ?? null;
+  },
+  openUrl: async (url) => {
+    const { openUrl } = await import("@tauri-apps/plugin-opener");
+    await openUrl(url);
+  },
 };
