@@ -1,0 +1,103 @@
+name: Build Windows installer
+
+# Windows runners burn Actions minutes fastest, so this only runs on main,
+# on version tags, or when started by hand (Brief 11.1).
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - ".gitignore"
+      - ".devcontainer/**"
+  workflow_dispatch:
+
+concurrency:
+  group: build-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  installer:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: . -> target
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build the NSIS installer
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          args: --bundles nsis
+
+      - name: Collect the installer
+        id: collect
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -Recurse -Path target\release\bundle\nsis -Filter *.exe |
+                 Select-Object -First 1
+          if (-not $exe) { throw "no NSIS installer was produced" }
+          $size = [math]::Round($exe.Length / 1MB, 1)
+          "path=$($exe.FullName)" >> $env:GITHUB_OUTPUT
+          "size=$size" >> $env:GITHUB_OUTPUT
+          Write-Host "Installer: $($exe.Name) ($size MB)"
+
+      - name: Check the installer size budget
+        shell: pwsh
+        run: |
+          # The brief's budget is 40 MB with the embedding model included.
+          if ([double]"${{ steps.collect.outputs.size }}" -gt 40) {
+            Write-Warning "Installer is ${{ steps.collect.outputs.size }} MB, over the 40 MB budget."
+          }
+
+      - name: Upload the installer as a workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: StudyBites-installer
+          path: ${{ steps.collect.outputs.path }}
+          retention-days: 7
+          if-no-files-found: error
+
+      # Rolling pre-release so the newest .exe is always in the same place.
+      - name: Publish to the rolling "latest" pre-release
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Latest build
+          body: |
+            Automatic build of `main`.
+
+            * Commit: ${{ github.sha }}
+            * Built: ${{ github.run_started_at }}
+            * Installer size: ${{ steps.collect.outputs.size }} MB
+
+            Windows will warn that the app is unsigned — choose **More info → Run anyway**.
+          prerelease: true
+          draft: false
+          files: ${{ steps.collect.outputs.path }}
+
+      - name: Publish a versioned release
+        if: ${{ startsWith(github.ref, 'refs/tags/') }}
+        uses: softprops/action-gh-release@v2
+        with:
+          name: StudyBites ${{ github.ref_name }}
+          generate_release_notes: true
+          files: ${{ steps.collect.outputs.path }}

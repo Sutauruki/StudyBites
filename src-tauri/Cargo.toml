@@ -1,0 +1,23 @@
+[package]
+name = "studybites"
+description = "StudyBites — distraction-free study app"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+publish = false
+license-file = "../LICENSE"
+default-run = "studybites"
+
+[lib]
+name = "studybites_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+studybites-core = { path = "../crates/studybites-core" }
+tauri = { version = "2", features = [] }
+serde = { workspace = true }
+serde_json = { workspace = true }
