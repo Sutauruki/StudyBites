@@ -1,0 +1,93 @@
+/* Design tokens. Light is the default; dark follows the system unless the
+   user picks a theme in Settings (data-theme on <html> wins). */
+
+:root {
+  /* type */
+  --font-sans: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --fs-xs: 0.75rem;
+  --fs-sm: 0.875rem;
+  --fs-md: 1rem;
+  --fs-lg: 1.25rem;
+  --fs-xl: 1.75rem;
+  --fs-card: 1.5rem;
+  --lh-tight: 1.25;
+  --lh-body: 1.6;
+
+  /* spacing */
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 24px;
+  --s-6: 32px;
+  --s-7: 48px;
+  --s-8: 64px;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+
+  --maxw-content: 760px;
+
+  /* motion — used sparingly (Brief 4) */
+  --t-fast: 110ms ease;
+  --t-base: 180ms ease;
+
+  /* light palette */
+  --bg: #f7f7f5;
+  --surface: #ffffff;
+  --surface-2: #f1f1ee;
+  --border: #e2e2dd;
+  --border-strong: #cfcfc8;
+  --text: #1b1b19;
+  --text-muted: #6b6b64;
+  --text-faint: #96968d;
+  --accent: #2f6fed;
+  --accent-text: #ffffff;
+  --accent-soft: #e8f0fe;
+  --danger: #b3261e;
+  --danger-soft: #fdecea;
+  --ok: #1f7a45;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 8px 24px rgba(0, 0, 0, 0.06);
+  --focus: 0 0 0 3px rgba(47, 111, 237, 0.35);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #14151a;
+    --surface: #1c1e24;
+    --surface-2: #23262e;
+    --border: #2d313a;
+    --border-strong: #3c414d;
+    --text: #e9eaec;
+    --text-muted: #a0a4ae;
+    --text-faint: #7b808b;
+    --accent: #7aa2ff;
+    --accent-text: #10131a;
+    --accent-soft: #1f2838;
+    --danger: #f2b8b5;
+    --danger-soft: #35211f;
+    --ok: #74d39c;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.35);
+    --focus: 0 0 0 3px rgba(122, 162, 255, 0.4);
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #14151a;
+  --surface: #1c1e24;
+  --surface-2: #23262e;
+  --border: #2d313a;
+  --border-strong: #3c414d;
+  --text: #e9eaec;
+  --text-muted: #a0a4ae;
+  --text-faint: #7b808b;
+  --accent: #7aa2ff;
+  --accent-text: #10131a;
+  --accent-soft: #1f2838;
+  --danger: #f2b8b5;
+  --danger-soft: #35211f;
+  --ok: #74d39c;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.35);
+  --focus: 0 0 0 3px rgba(122, 162, 255, 0.4);
+}

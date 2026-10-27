@@ -1,0 +1,39 @@
+# Node
+node_modules/
+dist/
+dist-ssr/
+*.local
+.npm/
+
+# Rust
+target/
+**/target/
+
+# Tauri build output
+src-tauri/gen/
+src-tauri/resources/models/
+
+# Secrets — NEVER commit these
+*.pem
+*.key
+*.pk8
+*_private*
+*secret*
+license-keys/
+licenses.json
+.env
+.env.*
+!.env.example
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Local databases and scratch
+*.db
+*.db-shm
+*.db-wal
+*.sqlite

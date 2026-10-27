@@ -1,0 +1,18 @@
+[package]
+name = "studybites-core"
+description = "StudyBites core: encrypted storage, migrations and domain logic"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+publish = false
+license-file = "../../LICENSE"
+
+[dependencies]
+rusqlite = { version = "0.41", features = ["bundled-sqlcipher"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"
