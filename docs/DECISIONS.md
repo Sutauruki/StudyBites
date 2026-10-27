@@ -142,3 +142,28 @@ The costs, accepted: a slower first build (OpenSSL compiles from source, then
 `rust-cache` keeps it warm) and a few MB of static OpenSSL in the binary.
 Building OpenSSL on Windows needs NASM and Perl — the runner image has both,
 and the workflow installs them if that ever stops being true.
+
+### D15. Release upload paths use forward slashes, and must match a file
+
+The first fully successful Windows build published a release with no installer
+attached: the tag existed, the job was green, and there was nothing to
+download.
+
+`softprops/action-gh-release` treats `files` as a glob pattern, and in glob a
+backslash escapes the next character. The path PowerShell produces,
+
+```
+D:\a\StudyBites\StudyBites\target\release\bundle\nsis\StudyBites_0.1.0_x64-setup.exe
+```
+
+therefore matches nothing. Confirmed against the glob library directly: the
+backslash form returns 0 matches, the forward-slash form returns 1.
+`actions/upload-artifact` uses a different glob implementation that handles
+Windows paths, which is why the artifact uploaded correctly from the same path
+and hid the problem.
+
+So the collect step now emits forward slashes, and both release steps set
+`fail_on_unmatched_files: true`. The default is `false`, which is what turned a
+broken upload into a passing build — the kind of failure that costs a whole
+round trip to notice.
+

@@ -73,9 +73,14 @@ jobs:
                  Select-Object -First 1
           if (-not $exe) { throw "no NSIS installer was produced" }
           $size = [math]::Round($exe.Length / 1MB, 1)
-          "path=$($exe.FullName)" >> $env:GITHUB_OUTPUT
+          # Forward slashes, not the native backslashes: the release action
+          # treats `files` as a glob pattern, where `\` escapes the next
+          # character, so a Windows path silently matches nothing.
+          $path = $exe.FullName -replace '\\', '/'
+          "path=$path" >> $env:GITHUB_OUTPUT
           "size=$size" >> $env:GITHUB_OUTPUT
           Write-Host "Installer: $($exe.Name) ($size MB)"
+          Write-Host "Path for upload: $path"
 
       - name: Check the installer size budget
         shell: pwsh
@@ -111,6 +116,9 @@ jobs:
           prerelease: true
           draft: false
           files: ${{ steps.collect.outputs.path }}
+          # Without this, an unmatched path uploads nothing and still passes —
+          # a green build with no downloadable installer.
+          fail_on_unmatched_files: true
 
       - name: Publish a versioned release
         if: ${{ startsWith(github.ref, 'refs/tags/') }}
@@ -119,3 +127,4 @@ jobs:
           name: StudyBites ${{ github.ref_name }}
           generate_release_notes: true
           files: ${{ steps.collect.outputs.path }}
+          fail_on_unmatched_files: true
