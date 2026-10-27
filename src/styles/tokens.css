@@ -5,21 +5,27 @@
  * brass for the one accent. Deliberately no blue-violet: that is the stock
  * "AI product" palette and it reads cold for something you sit with nightly.
  *
- * Every font here ships with Windows, so nothing is downloaded and the
- * strict CSP stays intact.
+ * Typography is two bundled variable faces (see fonts.css), not system fonts:
+ * system stacks render differently on every machine, so the app could never
+ * be designed to look like one thing. Manrope for titles and figures, Inter
+ * for everything you read.
  */
 
 :root {
-  /* Interface: humanist sans, quiet. */
-  --font-sans: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
+  /* Titles, figures, labels: Manrope. Geometric, a little flared, and it
+     draws numerals that line up — which matters for week numbers, counts and
+     the session clock. */
+  --font-display: "Manrope Variable", "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
 
-  /* Reading: a warm screen serif. Constantia and Cambria were drawn for
-     on-screen text and ship with Windows; Iowan and Georgia cover the rest.
-     This is what makes a card feel like a book rather than a form. */
-  --font-read: Constantia, "Iowan Old Style", Cambria, Georgia, "Times New Roman", serif;
+  /* Everything you read: Inter, drawn for screen text at small sizes. */
+  --font-sans: "Inter Variable", "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
 
-  /* Metadata — week numbers, counts, the session clock — sits in mono so
-     figures line up and read as data rather than prose. */
+  /* Reading surfaces — a card prompt, an answer, a tile title. Same family as
+     the interface on purpose: the shift is size, measure and weight rather
+     than a second typeface competing for attention. */
+  --font-read: var(--font-sans);
+
+  /* Code and raw keys stay mono. */
   --font-mono: "Cascadia Mono", "SF Mono", Consolas, "Liberation Mono", monospace;
 
   --fs-xs: 0.75rem;

@@ -32,6 +32,9 @@
     "active": true,
     "targets": ["nsis"],
     "icon": ["icons/icon.ico", "icons/icon.png"],
+    "resources": {
+      "../THIRD-PARTY-NOTICES.md": "THIRD-PARTY-NOTICES.md"
+    },
     "copyright": "Copyright (c) 2026 Odejayi Ezekiel (Sutauruki). All rights reserved.",
     "category": "Education",
     "shortDescription": "Distraction-free study app",
