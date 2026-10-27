@@ -355,3 +355,50 @@ worse, but it should not be called proven until CI stays green over time.
 Separately, `Db::prepare` no longer flattens every failure into `Locked`:
 only a failed read *after* keying means a wrong key. A cipher that refuses
 to start now reports its real error, which is what made this diagnosable.
+
+### D31. Typed answers are marked locally first, and the AI only decides
+
+Writing an answer from memory is a far stronger test than revealing one and
+rating yourself. The cost is that marking wants an AI request per card, while
+the study loop has been offline and free (D21).
+
+So marking runs in two stages. A blank answer, an answer that matches word
+for word, and pure noise are decided locally and instantly. Everything else —
+whether different words mean the same thing, and how an examiner would want
+it written — goes to the AI, which is where the value is anyway.
+
+The thresholds are deliberately lopsided. Marking something correct when it
+is not teaches the student the wrong thing, so the local "correct" rule is
+strict and anything doubtful is passed on rather than guessed at. Expect most
+real attempts to reach the AI; the local pass exists to stop the trivial cases
+costing a request each, not to avoid the work.
+
+### D32. Marking never suggests Easy
+
+FSRS wants to know how hard a card was to *recall*. Marking knows how *right*
+the answer was. They are related but not the same: someone who writes well can
+produce a correct answer they barely remembered.
+
+So the suggested rating tops out at Good, and the student can always override
+it. Only they can say an answer came effortlessly. Mapping a high score to
+Easy would inflate every interval for anyone who writes fluently, which is
+exactly the wrong failure.
+
+### D33. A practice test is not a review
+
+CBT tests touch neither `card_state` nor `review_log`. A forty-question mock
+answered against a clock would otherwise reschedule half the deck on the
+strength of guesses, and a guessed-right answer would push a card the student
+does not actually know weeks into the future.
+
+Practice is recorded in its own tables. It is for the student to see where
+they stand, not for the scheduler to act on.
+
+Two smaller choices fall out of the same thinking:
+
+* **Questions come from cards the student already has**, so a test costs no
+  AI requests and works offline. Preview cards are excluded — they are
+  labelled "not from your class" precisely because they might not be.
+* **The answer key does not reach the WebView until the paper is submitted.**
+  `cbt_start` returns questions only; `cbt_submit` returns the marking. An
+  exam whose answers are already sitting in the page is not an exam.

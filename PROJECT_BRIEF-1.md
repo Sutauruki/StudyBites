@@ -296,6 +296,11 @@ No Codespace needed for this.
 - "Prepare for next class" previews (labeled, small, optional, with merge/retire logic), web-search fallback, exam mode, and Download original.
 - ✅ Done when: after studying topic N, the app offers a labeled preview of topic N+1, and uploading real notes for N+1 later retires the preview cards.
 
+**Phase 5 — Answering and practising** (added after Phase 3; see docs/DECISIONS.md D31-D33)
+- Short-answer cards are written out and marked against the real answer, with feedback and, where the wording would cost marks, how to write it for full marks. Marked locally where possible, by AI only for genuine judgement calls, and falling back to self-grading whenever no provider can be reached. Per subject, on by default.
+- CBT practice tests: pick subjects, a question count and a duration; a timed multiple-choice mock drawn from the student's own cards, with a numbered grid, flagging, auto-submit and a review of what was missed. Kept entirely apart from the spaced-repetition schedule.
+- ✅ Done when: a typed answer in the student's own words is marked correct, a test can be sat end to end offline, and sitting one leaves every card's due date unchanged.
+
 **Later (not now):** local Ollama offline mode, Android build from the same codebase, OCR for scanned PDFs without AI.
 
 ---

@@ -11,8 +11,8 @@ use studybites_core::ai::{AiProvider, ProviderId, SchemeEntry, TopicMatch};
 use studybites_core::embed::{Embedder, LexicalEmbedder};
 use studybites_core::providers::{Attempt, Http, Provider, UreqGetHttp, UreqHttp};
 use studybites_core::{
-    files, ingest, jobs, library, preview, quota, study, subjects, update, Db, Rating, Subject,
-    Topic,
+    files, ingest, jobs, library, marking, preview, quota, study, subjects, update, Db, Rating,
+    Subject, Topic,
 };
 use tauri::{Emitter, State};
 
@@ -308,6 +308,96 @@ pub async fn explain(
         answer,
         sources: notes.iter().map(|n| n.content.title.clone()).collect(),
     })
+}
+
+// ---- marking typed answers ---------------------------------------------
+
+/// Whether a subject is studied by typing answers out.
+///
+/// On by default: writing the answer from memory is the stronger test. It is
+/// off for subjects where typing fights the material — formulas, derivations —
+/// and the student flips it on the subject page.
+#[tauri::command]
+pub fn typed_answers_get(state: State<AppState>, subject_id: i64) -> Ipc<bool> {
+    let db = lock(&state)?;
+    Ok(db
+        .setting(&typed_key(subject_id))
+        .map_err(to_ipc)?
+        .map(|v| v != "off")
+        .unwrap_or(true))
+}
+
+#[tauri::command]
+pub fn typed_answers_set(state: State<AppState>, subject_id: i64, enabled: bool) -> Ipc<bool> {
+    let db = lock(&state)?;
+    db.set_setting(&typed_key(subject_id), if enabled { "on" } else { "off" })
+        .map_err(to_ipc)?;
+    Ok(enabled)
+}
+
+fn typed_key(subject_id: i64) -> String {
+    format!("study.typed.{subject_id}")
+}
+
+/// Mark what the student wrote.
+///
+/// Tries locally first and only reaches for a provider when the answer is a
+/// genuine judgement call. If no provider can be reached — no key, no network,
+/// quota gone — this does NOT fail the card: it says so and lets the student
+/// grade themselves, exactly as before. Studying must never stop because the
+/// internet did (D21).
+#[tauri::command]
+pub async fn answer_mark(
+    state: State<'_, AppState>,
+    question: String,
+    expected: String,
+    typed: String,
+) -> Ipc<MarkOutcome> {
+    if let Some(mark) = marking::quick_mark(&typed, &expected) {
+        return Ok(MarkOutcome {
+            mark: Some(mark),
+            unavailable: None,
+        });
+    }
+
+    let http = UreqHttp;
+    let list = match require_providers(&state, &http) {
+        Ok(list) => list,
+        Err(why) => return Ok(MarkOutcome::unavailable(why)),
+    };
+    let available = match available_ids(&state, &list) {
+        Ok(ids) => ids,
+        Err(why) => return Ok(MarkOutcome::unavailable(why)),
+    };
+
+    match studybites_core::providers::route(&list, &|id| available.contains(&id), |p| {
+        p.mark_answer(&question, &expected, &typed)
+    }) {
+        Ok((_, mark)) => Ok(MarkOutcome {
+            mark: Some(mark),
+            unavailable: None,
+        }),
+        Err(attempts) => Ok(MarkOutcome::unavailable(describe_attempts(attempts))),
+    }
+}
+
+/// Either a mark, or the reason there is none and a prompt to self-grade.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarkOutcome {
+    pub mark: Option<marking::Mark>,
+    /// Set when marking could not run. The card still counts; the student
+    /// grades it themselves.
+    pub unavailable: Option<String>,
+}
+
+impl MarkOutcome {
+    fn unavailable(why: String) -> Self {
+        Self {
+            mark: None,
+            unavailable: Some(why),
+        }
+    }
 }
 
 // ---- studying -----------------------------------------------------------

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { backend, errorText, isDesktop, type LicenseStatus, type Subject } from "./api";
 import { Banner } from "./components/ui";
+import { CbtPage } from "./routes/CbtPage";
 import { HomePage } from "./routes/HomePage";
 import { OnboardingPage } from "./routes/OnboardingPage";
 import { SettingsPage } from "./routes/SettingsPage";
@@ -16,6 +17,7 @@ type View =
   | { name: "subjects" }
   | { name: "subject"; id: number }
   | { name: "study"; subjectId: number | null; minutes: number }
+  | { name: "cbt" }
   | { name: "settings" };
 
 const THEME_KEY = "theme";
@@ -133,6 +135,13 @@ export function App() {
           >
             <span>All subjects</span>
           </button>
+          <button
+            className="sidebar__link"
+            aria-current={view.name === "cbt" ? "page" : undefined}
+            onClick={() => go({ name: "cbt" })}
+          >
+            <span>Practice test</span>
+          </button>
         </div>
 
         {subjects.length > 0 && (
@@ -192,6 +201,7 @@ export function App() {
               onDone={() => setView({ name: "home" })}
             />
           )}
+          {view.name === "cbt" && <CbtPage />}
           {view.name === "settings" && (
             <SettingsPage
               theme={theme}

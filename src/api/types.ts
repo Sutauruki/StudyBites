@@ -58,10 +58,83 @@ export interface LicenseStatus {
   problem: string | null;
 }
 
+/** Phase 5: how a typed answer was marked. */
+export type Verdict = "correct" | "close" | "wrong";
+
+export interface Mark {
+  verdict: Verdict;
+  /** Out of 100 — "what this would score in an exam". */
+  score: number;
+  feedback: string;
+  /** How to write it for full marks. Empty when the answer was already good. */
+  modelAnswer: string;
+  /** False when decided locally, with no AI request spent. */
+  fromAi: boolean;
+}
+
+export interface MarkOutcome {
+  mark: Mark | null;
+  /** Set when marking could not run; the student grades themselves instead. */
+  unavailable: string | null;
+}
+
+/** Phase 5: CBT practice tests. */
+export interface CbtQuestion {
+  cardId: number;
+  position: number;
+  question: string;
+  options: string[];
+  subjectName: string | null;
+  topicTitle: string | null;
+}
+
+export interface CbtTest {
+  id: number;
+  minutes: number;
+  questions: CbtQuestion[];
+}
+
+/** Revealed only after submitting — the answer key is not in the page before. */
+export interface CbtMarked {
+  position: number;
+  question: string;
+  options: string[];
+  correct: number;
+  chosen: number | null;
+  explanation: string;
+  topicTitle: string | null;
+}
+
+export interface CbtResult {
+  testId: number;
+  score: number;
+  total: number;
+  percent: number;
+  answers: CbtMarked[];
+}
+
+export interface CbtSummary {
+  id: number;
+  startedAt: string;
+  score: number | null;
+  total: number;
+  minutes: number;
+  subjectNames: string[];
+}
+
 export interface Backend extends Phase2Backend {
   appInfo(): Promise<AppInfo>;
 
   licenseStatus(): Promise<LicenseStatus>;
+
+  answerMark(question: string, expected: string, typed: string): Promise<MarkOutcome>;
+  typedAnswersGet(subjectId: number): Promise<boolean>;
+  typedAnswersSet(subjectId: number, enabled: boolean): Promise<boolean>;
+
+  cbtAvailable(subjectIds: number[]): Promise<number>;
+  cbtStart(subjectIds: number[], count: number, minutes: number): Promise<CbtTest>;
+  cbtSubmit(testId: number, chosen: Array<number | null>): Promise<CbtResult>;
+  cbtHistory(limit: number): Promise<CbtSummary[]>;
   eulaText(): Promise<string>;
   eulaAccept(): Promise<LicenseStatus>;
   activate(code: string): Promise<LicenseStatus>;
@@ -131,6 +204,8 @@ export interface SessionCard {
   card: Card;
   isNew: boolean;
   topicTitle: string | null;
+  /** A session can span subjects, and typed answers is a per-subject choice. */
+  subjectId: number | null;
 }
 
 export interface StudySession {

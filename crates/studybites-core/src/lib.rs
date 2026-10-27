@@ -5,6 +5,7 @@
 
 pub mod ai;
 pub mod base32;
+pub mod cbt;
 pub mod chunk;
 pub mod crypto;
 pub mod db;
@@ -17,6 +18,7 @@ pub mod ingest;
 pub mod jobs;
 pub mod library;
 pub mod license;
+pub mod marking;
 pub mod migrations;
 pub mod models;
 pub mod preview;
@@ -38,4 +40,5 @@ pub use error::{CoreError, Result};
 pub use fsrs::{Memory, Rating, State};
 pub use jobs::{Job, JobStatus};
 pub use license::{License, VerifiedLicense};
+pub use marking::{Mark, Verdict};
 pub use models::{NewTopic, Subject, Topic};

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   backend,
   errorText,
+  type MarkOutcome,
   type PreviewOffer,
   type SessionCard,
   type SessionSummary,
@@ -42,6 +43,13 @@ export function StudyPage({
   const [error, setError] = useState<string | null>(null);
   const [secondsLeft, setSecondsLeft] = useState(minutes * 60);
 
+  // Typing the answer out is a per-subject choice, and a session can span
+  // subjects, so the setting is looked up once per subject in the session.
+  const [typedSubjects, setTypedSubjects] = useState<Record<number, boolean>>({});
+  const [written, setWritten] = useState("");
+  const [marking, setMarking] = useState(false);
+  const [outcome, setOutcome] = useState<MarkOutcome | null>(null);
+
   const shownAt = useRef<number>(Date.now());
   const busy = useRef(false);
 
@@ -54,6 +62,20 @@ export function StudyPage({
         setSession(started);
         setPhase(started.cards.length === 0 ? "finished" : "studying");
         shownAt.current = Date.now();
+
+        // One lookup per subject present, not per card.
+        const ids = [
+          ...new Set(
+            started.cards
+              .map((c) => c.subjectId)
+              .filter((id): id is number => typeof id === "number"),
+          ),
+        ];
+        const flags = await Promise.all(
+          ids.map(async (id) => [id, await backend.typedAnswersGet(id)] as const),
+        );
+        if (!alive) return;
+        setTypedSubjects(Object.fromEntries(flags));
       } catch (err) {
         if (alive) setError(errorText(err));
       }
@@ -111,6 +133,8 @@ export function StudyPage({
           setIndex((i) => i + 1);
           setRevealed(false);
           setChosen(null);
+          setWritten("");
+          setOutcome(null);
           shownAt.current = Date.now();
         }
       } catch (err) {
@@ -129,6 +153,15 @@ export function StudyPage({
         void finish();
         return;
       }
+      // Space and the digits are shortcuts everywhere except inside the
+      // answer box, where they are just the student writing.
+      const target = e.target as HTMLElement | null;
+      const isTyping =
+        target?.tagName === "TEXTAREA" ||
+        target?.tagName === "INPUT" ||
+        target?.isContentEditable === true;
+      if (isTyping) return;
+
       if (e.key === " " || e.key === "Enter") {
         e.preventDefault();
         if (!revealed) setRevealed(true);
@@ -146,6 +179,30 @@ export function StudyPage({
     const s = secondsLeft % 60;
     return `${m}:${String(s).padStart(2, "0")}`;
   }, [secondsLeft]);
+
+  // Short-answer cards are written out, unless this subject has typing off.
+  // Flashcards and MCQs are unchanged: they are recognition tasks by design.
+  const writeIn =
+    current?.card.payload.kind === "short" &&
+    (current.subjectId === null || typedSubjects[current.subjectId] !== false);
+
+  const suggested = outcome?.mark ? (RATING_FOR[outcome.mark.verdict] ?? null) : null;
+
+  const submitWritten = useCallback(async () => {
+    const payload = current?.card.payload;
+    if (!payload || payload.kind !== "short" || marking) return;
+    setMarking(true);
+    try {
+      setOutcome(await backend.answerMark(payload.prompt, payload.answer, written));
+    } catch (err) {
+      // Marking failing must never cost the card. Fall through to the answer
+      // and let the student grade themselves.
+      setOutcome({ mark: null, unavailable: errorText(err) });
+    } finally {
+      setMarking(false);
+      setRevealed(true);
+    }
+  }, [current, written, marking]);
 
   if (error && phase === "loading") return <Banner kind="error">{error}</Banner>;
   if (phase === "loading") return <Loading label="Picking your cards…" />;
@@ -195,22 +252,120 @@ export function StudyPage({
             setRevealed(true);
           }}
         />
+        {revealed && outcome && <MarkPanel outcome={outcome} />}
       </div>
 
-      {!revealed ? (
+      {!revealed && writeIn ? (
+        <WriteAnswer
+          value={written}
+          busy={marking}
+          onChange={setWritten}
+          onSkip={() => setRevealed(true)}
+          onSubmit={submitWritten}
+        />
+      ) : !revealed ? (
         <button className="btn btn--primary btn--big" onClick={() => setRevealed(true)}>
           Reveal <kbd>Space</kbd>
         </button>
       ) : (
         <div className="study__grades">
           {GRADES.map((g) => (
-            <button key={g.rating} className="btn" onClick={() => void grade(g.rating)}>
+            <button
+              key={g.rating}
+              className={`btn${g.rating === suggested ? " btn--primary" : ""}`}
+              onClick={() => void grade(g.rating)}
+            >
               {g.label} <kbd>{g.key}</kbd>
             </button>
           ))}
         </div>
       )}
+      {revealed && suggested !== null && (
+        <p className="muted study__suggestion">
+          Marked for you — change it if that is not how it felt.
+        </p>
+      )}
     </>
+  );
+}
+
+const RATING_FOR: Record<string, number> = { correct: 3, close: 2, wrong: 1 };
+
+/** The box the student writes into, before anything is revealed. */
+function WriteAnswer({
+  value,
+  busy,
+  onChange,
+  onSkip,
+  onSubmit,
+}: {
+  value: string;
+  busy: boolean;
+  onChange: (value: string) => void;
+  onSkip: () => void;
+  onSubmit: () => void;
+}) {
+  return (
+    <div className="study__write">
+      <textarea
+        className="input study__answerbox selectable"
+        value={value}
+        rows={4}
+        autoFocus
+        placeholder="Write your answer…"
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => {
+          // Enter makes paragraphs; Ctrl/Cmd+Enter submits.
+          if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && !busy) {
+            e.preventDefault();
+            onSubmit();
+          }
+        }}
+      />
+      <div className="action">
+        <button
+          className="btn btn--primary btn--big"
+          disabled={busy || value.trim().length === 0}
+          onClick={onSubmit}
+        >
+          {busy ? "Marking…" : "Submit"} <kbd>Ctrl ↵</kbd>
+        </button>
+        <button className="btn btn--ghost" disabled={busy} onClick={onSkip}>
+          I don&rsquo;t know
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** The mark, shown above the real answer rather than instead of it. */
+function MarkPanel({ outcome }: { outcome: MarkOutcome }) {
+  if (!outcome.mark) {
+    return (
+      <p className="muted study__markfail">
+        {outcome.unavailable} Grade yourself instead — your answer still counts.
+      </p>
+    );
+  }
+
+  const { verdict, score, feedback, modelAnswer, fromAi } = outcome.mark;
+  const label = verdict === "correct" ? "Correct" : verdict === "close" ? "Nearly" : "Not yet";
+
+  return (
+    <div className={`mark mark--${verdict}`}>
+      <div className="mark__head">
+        <span className="mark__verdict">{label}</span>
+        <span className="mark__score">{score}/100</span>
+        {!fromAi && <span className="chip">checked offline</span>}
+      </div>
+      <p className="mark__feedback">{feedback}</p>
+      {modelAnswer && (
+        <div className="mark__model">
+          <span className="label">How to write it for full marks</span>
+          <p>{modelAnswer}</p>
+        </div>
+      )}
+    </div>
   );
 }
 

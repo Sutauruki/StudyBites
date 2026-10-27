@@ -115,6 +115,8 @@ export function SubjectPage({
 
       <ExamSection subject={subject} onChanged={refresh} onError={setError} />
 
+      <TypedAnswersSection subjectId={subjectId} onError={setError} />
+
       <MasterySection mastery={mastery} />
 
       <ExplainSection subjectId={subjectId} />
@@ -693,6 +695,64 @@ function ExamSection({
                 ? `${Math.ceil(days)} day${Math.ceil(days) === 1 ? "" : "s"} to go — sessions are favouring your weakest topics.`
                 : `${Math.ceil(days)} days to go. The mix shifts in the last three weeks.`}
         </p>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * Whether this subject is studied by writing the answer out (Phase 5).
+ *
+ * Per subject rather than global, because it suits them differently: writing
+ * a paragraph is exactly the right practice for a theory course, and a fight
+ * with the keyboard for one made of formulas.
+ */
+function TypedAnswersSection({
+  subjectId,
+  onError,
+}: {
+  subjectId: number;
+  onError: (message: string) => void;
+}) {
+  const [enabled, setEnabled] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    void backend
+      .typedAnswersGet(subjectId)
+      .then(setEnabled)
+      .catch(() => setEnabled(null));
+  }, [subjectId]);
+
+  if (enabled === null) return null;
+
+  return (
+    <section className="stack">
+      <span className="label">How you answer</span>
+      <div className="card card--pad">
+        <label className="switch">
+          <input
+            type="checkbox"
+            checked={enabled}
+            onChange={async (e) => {
+              const next = e.target.checked;
+              setEnabled(next);
+              try {
+                await backend.typedAnswersSet(subjectId, next);
+              } catch (err) {
+                setEnabled(!next);
+                onError(errorText(err));
+              }
+            }}
+          />
+          <span className="switch__text">
+            <span className="switch__title">Write my answers out</span>
+            <span className="muted">
+              {enabled
+                ? "Short-answer questions give you a box to write in, and your answer is marked against the real one. Flashcards and multiple choice are unchanged."
+                : "Short-answer questions just show the answer for you to grade yourself. Turn this on for subjects where writing it out is the point."}
+            </span>
+          </span>
+        </label>
       </div>
     </section>
   );

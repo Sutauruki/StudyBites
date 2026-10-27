@@ -1026,3 +1026,96 @@ fn a_preview_is_kept_small_and_validated() {
     // Nothing usable is an error, not an empty preview.
     assert!(studybites_core::ai::parse_preview(r#"{"title":"X","keyIdeas":[]}"#).is_err());
 }
+
+// ---- marking typed answers (Phase 5) ------------------------------------
+
+#[test]
+fn obvious_answers_are_marked_without_spending_a_request() {
+    use studybites_core::marking::{self, Verdict};
+
+    let expected = "A compiler translates source code into machine code before the program runs.";
+
+    // Nothing typed.
+    let blank = marking::quick_mark("   ", expected).expect("blank is decided locally");
+    assert_eq!(blank.verdict, Verdict::Wrong);
+    assert!(!blank.from_ai);
+    assert!(
+        !blank.model_answer.is_empty(),
+        "a student who wrote nothing should still be shown the answer"
+    );
+
+    // The same answer, differently punctuated and capitalised.
+    let same = marking::quick_mark(
+        "a compiler TRANSLATES source code, into machine code before the program runs!!",
+        expected,
+    )
+    .expect("a word-for-word answer is decided locally");
+    assert_eq!(same.verdict, Verdict::Correct);
+    assert_eq!(same.score, 100);
+    assert!(!same.from_ai);
+    assert!(
+        same.model_answer.is_empty(),
+        "a correct, well-put answer must not be rewritten at the student"
+    );
+
+    // Noise, or an answer to some other question entirely.
+    let noise = marking::quick_mark("asdf qwer zxcv", expected).expect("noise is decided locally");
+    assert_eq!(noise.verdict, Verdict::Wrong);
+    assert!(!noise.from_ai);
+}
+
+#[test]
+fn a_real_attempt_in_different_words_goes_to_the_ai() {
+    use studybites_core::marking;
+
+    let expected = "A compiler translates source code into machine code before the program runs.";
+
+    // This is right, but shares little vocabulary. Deciding it locally would
+    // mean guessing, so it must be passed on rather than marked wrong.
+    assert!(
+        marking::quick_mark(
+            "It changes what you wrote into something the processor can run, ahead of time.",
+            expected,
+        )
+        .is_none(),
+        "a differently-worded answer is a judgement call, not a local decision"
+    );
+
+    // Half an answer is also a judgement call.
+    assert!(marking::quick_mark("it translates source code", expected).is_none());
+}
+
+#[test]
+fn a_mark_parses_and_never_suggests_easy() {
+    use studybites_core::fsrs::Rating;
+    use studybites_core::marking::{self, Verdict};
+
+    let mark = marking::parse_mark(
+        r#"```json
+        {"score": 90, "feedback": "Right idea, well put.", "modelAnswer": ""}
+        ```"#,
+    )
+    .unwrap();
+    assert_eq!(mark.verdict, Verdict::Correct);
+    assert_eq!(mark.score, 90);
+    assert!(mark.from_ai);
+    // Correctness is not effortlessness: only the student can claim Easy.
+    assert_eq!(mark.suggested_rating(), Rating::Good);
+
+    let partial =
+        marking::parse_mark(r#"{"score": 55, "feedback": "You missed the timing.", "modelAnswer": "Say it happens before the program runs."}"#)
+            .unwrap();
+    assert_eq!(partial.verdict, Verdict::Close);
+    assert_eq!(partial.suggested_rating(), Rating::Hard);
+    assert!(!partial.model_answer.is_empty());
+
+    let wrong =
+        marking::parse_mark(r#"{"score": 5, "feedback": "That is an interpreter."}"#).unwrap();
+    assert_eq!(wrong.verdict, Verdict::Wrong);
+    assert_eq!(wrong.suggested_rating(), Rating::Again);
+
+    // A reply with no score or no feedback is unusable, not a zero.
+    assert!(marking::parse_mark(r#"{"feedback": "ok"}"#).is_err());
+    assert!(marking::parse_mark(r#"{"score": 70}"#).is_err());
+    assert!(marking::parse_mark("not json at all").is_err());
+}

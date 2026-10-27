@@ -23,6 +23,9 @@ pub struct SessionCard {
     /// True when this card has never been studied.
     pub is_new: bool,
     pub topic_title: Option<String>,
+    /// Which subject this card belongs to. A session can span subjects, and
+    /// typing answers is a per-subject choice, so the card has to carry it.
+    pub subject_id: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -157,7 +160,8 @@ fn select_cards(
     };
 
     let sql = format!(
-        "SELECT c.*, t.title AS topic_title, s.state AS fsrs_state
+        "SELECT c.*, t.title AS topic_title, s.state AS fsrs_state,
+                COALESCE(m.subject_id, t.subject_id) AS subject_id
            FROM cards c
            JOIN card_state s ON s.card_id = c.id
            LEFT JOIN notes n ON n.id = c.note_id
@@ -178,6 +182,7 @@ fn select_cards(
         Ok(Some(SessionCard {
             is_new: row.get::<_, i64>("fsrs_state")? == 0,
             topic_title: row.get("topic_title")?,
+            subject_id: row.get("subject_id")?,
             card: Card {
                 id: row.get("id")?,
                 note_id: row.get("note_id")?,
