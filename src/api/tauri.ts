@@ -62,6 +62,8 @@ export const tauriBackend: Backend = {
 
   providersList: () => invoke("providers_list"),
   providerKeySet: (provider, key) => invoke("provider_key_set", { provider, key }),
+  providerModels: (provider) => invoke("provider_models", { provider }),
+  providerModelSet: (provider, model) => invoke("provider_model_set", { provider, model }),
   githubTokenSet: (token) => invoke("github_token_set", { token }),
   githubTokenPresent: () => invoke("github_token_present"),
   updateCheck: () => invoke("update_check"),

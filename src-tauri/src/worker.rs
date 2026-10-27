@@ -79,24 +79,35 @@ fn report(app: &AppHandle) {
 /// Work through the queue until it is empty, paused, or has nothing runnable.
 fn drain(app: &AppHandle) {
     let embedder = LexicalEmbedder;
+    let Some(state) = app.try_state::<AppState>() else {
+        return;
+    };
 
     loop {
-        // The keys are re-read each pass, so adding one in Settings takes
-        // effect without a restart.
+        // Keys and the chosen model are re-read each pass, so changing them
+        // in Settings takes effect without a restart.
         let http = UreqHttp;
-        let providers: Vec<Provider<'_>> = ProviderId::default_order()
-            .into_iter()
-            .filter_map(|id| keys::provider_key(id).map(|key| Provider::new(id, key, &http)))
-            .collect();
+        let providers: Vec<Provider<'_>> = {
+            let Ok(db) = state.db.lock() else { break };
+            ProviderId::default_order()
+                .into_iter()
+                .filter_map(|id| {
+                    let key = keys::provider_key(id)?;
+                    let chosen = db
+                        .setting(&format!("ai.model.{}", id.as_str()))
+                        .ok()
+                        .flatten()
+                        .unwrap_or_default();
+                    let provider = Provider::new(id, key, &http).with_model(chosen);
+                    (!provider.model.trim().is_empty()).then_some(provider)
+                })
+                .collect()
+        };
 
         if providers.is_empty() {
             // Nothing can be processed without a key; the queue simply waits.
             break;
         }
-
-        let Some(state) = app.try_state::<AppState>() else {
-            break;
-        };
 
         let outcome = {
             let Ok(mut db) = state.db.lock() else {

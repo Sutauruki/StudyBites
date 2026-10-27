@@ -24,17 +24,41 @@ fn lock<'a>(state: &'a State<'_, AppState>) -> Result<MutexGuard<'a, Db>, String
 
 /// Build the provider list in priority order, skipping any without a key.
 /// The keys are read here and never leave Rust.
-fn providers<'a>(http: &'a dyn Http) -> Vec<Provider<'a>> {
+/// Settings key holding the model the student chose for a provider.
+fn model_key(id: ProviderId) -> String {
+    format!("ai.model.{}", id.as_str())
+}
+
+fn providers<'a>(db: &Db, http: &'a dyn Http) -> Vec<Provider<'a>> {
     ProviderId::default_order()
         .into_iter()
-        .filter_map(|id| keys::provider_key(id).map(|key| Provider::new(id, key, http)))
+        .filter_map(|id| {
+            let key = keys::provider_key(id)?;
+            let chosen = db
+                .setting(&model_key(id))
+                .ok()
+                .flatten()
+                .unwrap_or_default();
+            let provider = Provider::new(id, key, http).with_model(chosen);
+            // Without a model there is nothing to call, so skip rather than
+            // spend a request discovering that.
+            (!provider.model.trim().is_empty()).then_some(provider)
+        })
         .collect()
 }
 
-fn require_providers<'a>(http: &'a dyn Http) -> Ipc<Vec<Provider<'a>>> {
-    let list = providers(http);
+fn require_providers<'a>(
+    state: &State<'_, AppState>,
+    http: &'a dyn Http,
+) -> Ipc<Vec<Provider<'a>>> {
+    let list = {
+        let db = lock(state)?;
+        providers(&db, http)
+    };
     if list.is_empty() {
-        return Err("No AI key has been added yet. Open Settings to add one.".into());
+        return Err(
+            "No AI provider is ready. Open Settings, add a key, then choose a model for it.".into(),
+        );
     }
     Ok(list)
 }
@@ -58,6 +82,14 @@ fn describe_attempts(attempts: Vec<Attempt>) -> String {
         .all(|a| matches!(a.error, studybites_core::AiError::QuotaExhausted { .. }))
     {
         return "Daily AI limit reached — this will work again after the limit resets.".into();
+    }
+    if attempts
+        .iter()
+        .all(|a| matches!(a.error, studybites_core::AiError::ModelUnavailable(_)))
+    {
+        return "The chosen model is no longer offered. Open Settings and pick a \
+                current one from the list."
+            .into();
     }
     attempts
         .iter()
@@ -189,7 +221,7 @@ pub async fn topic_suggest(
     }
 
     let http = UreqHttp;
-    let list = require_providers(&http)?;
+    let list = require_providers(&state, &http)?;
     let available = available_ids(&state, &list)?;
 
     studybites_core::providers::route(&list, &|id| available.contains(&id), |p| {
@@ -203,7 +235,7 @@ pub async fn topic_suggest(
 #[tauri::command]
 pub async fn scheme_parse(state: State<'_, AppState>, text: String) -> Ipc<Vec<SchemeEntry>> {
     let http = UreqHttp;
-    let list = require_providers(&http)?;
+    let list = require_providers(&state, &http)?;
     let available = available_ids(&state, &list)?;
 
     studybites_core::providers::route(&list, &|id| available.contains(&id), |p| {
@@ -257,7 +289,7 @@ pub async fn explain(
 
     let contents: Vec<_> = notes.iter().map(|n| n.content.clone()).collect();
     let http = UreqHttp;
-    let list = require_providers(&http)?;
+    let list = require_providers(&state, &http)?;
     let available = available_ids(&state, &list)?;
 
     let (_, answer) =
@@ -352,7 +384,7 @@ pub async fn preview_generate(
     };
 
     let http = UreqHttp;
-    let list = require_providers(&http)?;
+    let list = require_providers(&state, &http)?;
     let available = available_ids(&state, &list)?;
 
     let (_, generated) =
@@ -459,8 +491,18 @@ pub struct ProviderInfo {
     pub default_model: String,
 }
 
+/// The model in effect for a provider: the chosen one, else the default.
+fn chosen_model(db: &Db, id: ProviderId) -> String {
+    db.setting(&model_key(id))
+        .ok()
+        .flatten()
+        .filter(|m| !m.trim().is_empty())
+        .unwrap_or_else(|| Provider::default_model(id).to_string())
+}
+
 #[tauri::command]
-pub fn providers_list() -> Ipc<Vec<ProviderInfo>> {
+pub fn providers_list(state: State<AppState>) -> Ipc<Vec<ProviderInfo>> {
+    let db = lock(&state)?;
     let configured = keys::configured();
     Ok(ProviderId::default_order()
         .into_iter()
@@ -473,9 +515,29 @@ pub fn providers_list() -> Ipc<Vec<ProviderInfo>> {
             },
             configured: configured.contains(&id),
             help_url: id.key_help_url().to_string(),
-            default_model: Provider::default_model(id).to_string(),
+            default_model: chosen_model(&db, id),
         })
         .collect())
+}
+
+/// The models a provider currently offers, asked of the provider itself.
+#[tauri::command]
+pub async fn provider_models(provider: String) -> Ipc<Vec<String>> {
+    let id = ProviderId::parse(&provider).ok_or("that is not a provider StudyBites knows")?;
+    // OpenRouter publishes its list without a key; the others need one.
+    let key = keys::provider_key(id).unwrap_or_default();
+    if key.is_empty() && id != ProviderId::OpenRouter {
+        return Err("Add this provider's key first, then its models can be listed.".into());
+    }
+    studybites_core::providers::list_models(&UreqGetHttp, id, &key).map_err(|e| e.to_string())
+}
+
+/// Choose which model a provider should use.
+#[tauri::command]
+pub fn provider_model_set(state: State<AppState>, provider: String, model: String) -> Ipc<()> {
+    let id = ProviderId::parse(&provider).ok_or("that is not a provider StudyBites knows")?;
+    let db = lock(&state)?;
+    db.set_setting(&model_key(id), model.trim()).map_err(to_ipc)
 }
 
 /// Save a provider key. An empty value removes it.

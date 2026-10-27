@@ -249,6 +249,8 @@ export interface Phase2Backend {
 
   providersList(): Promise<ProviderInfo[]>;
   providerKeySet(provider: string, key: string): Promise<void>;
+  providerModels(provider: string): Promise<string[]>;
+  providerModelSet(provider: string, model: string): Promise<void>;
   githubTokenSet(token: string): Promise<void>;
   githubTokenPresent(): Promise<boolean>;
   updateCheck(): Promise<UpdateStatus>;

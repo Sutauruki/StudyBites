@@ -303,6 +303,9 @@ pub enum AiError {
     Auth(String),
     /// The model replied, but not with usable JSON.
     BadResponse(String),
+    /// The provider no longer offers this model. Retrying cannot help; the
+    /// student has to choose a different one in Settings.
+    ModelUnavailable(String),
 }
 
 impl std::fmt::Display for AiError {
@@ -315,6 +318,7 @@ impl std::fmt::Display for AiError {
             Self::Transient(m) => write!(f, "temporary problem: {m}"),
             Self::Auth(m) => write!(f, "API key problem: {m}"),
             Self::BadResponse(m) => write!(f, "unusable response: {m}"),
+            Self::ModelUnavailable(m) => write!(f, "{m}"),
         }
     }
 }
@@ -329,7 +333,10 @@ impl AiError {
     pub fn should_fall_through(&self) -> bool {
         matches!(
             self,
-            Self::QuotaExhausted { .. } | Self::Auth(_) | Self::Transient(_)
+            Self::QuotaExhausted { .. }
+                | Self::Auth(_)
+                | Self::Transient(_)
+                | Self::ModelUnavailable(_)
         )
     }
 }

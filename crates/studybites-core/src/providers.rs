@@ -117,6 +117,12 @@ impl Http for UreqGetHttp {
 /// 401 means the key is wrong and retrying is pointless, and a 5xx is worth
 /// another attempt.
 pub fn classify(error: HttpError) -> AiError {
+    classify_for(error, "")
+}
+
+/// `model` is named in the message, because a 404 almost always means the
+/// provider has retired that model rather than that anything is wrong here.
+pub fn classify_for(error: HttpError, model: &str) -> AiError {
     match error {
         HttpError::Transport(message) => AiError::Transient(message),
         HttpError::Status { code, body } => match code {
@@ -127,6 +133,11 @@ pub fn classify(error: HttpError) -> AiError {
             400 if body.contains("API key") || body.contains("api_key") => {
                 AiError::Auth("the provider rejected the key (400)".into())
             }
+            404 => AiError::ModelUnavailable(if model.is_empty() {
+                "that model is no longer offered by this provider".to_string()
+            } else {
+                format!("the model \"{model}\" is no longer offered by this provider")
+            }),
             500..=599 => AiError::Transient(format!("the provider is having trouble ({code})")),
             other => AiError::Transient(format!("unexpected response {other}")),
         },
@@ -228,7 +239,7 @@ impl Chat<'_> {
         let raw = self
             .http
             .post_json(&url, &headers, &body)
-            .map_err(classify)?;
+            .map_err(|e| classify_for(e, self.model))?;
         let parsed: serde_json::Value = serde_json::from_str(&raw)
             .map_err(|e| AiError::BadResponse(format!("response was not JSON: {e}")))?;
 
@@ -262,12 +273,14 @@ pub struct Provider<'a> {
 }
 
 impl<'a> Provider<'a> {
-    /// Free-tier models that are good enough for distilling and card writing.
+    /// Starting points only — the real model is chosen in Settings from the
+    /// provider's live list. Gemini's is a maintained alias, which is the one
+    /// kind of identifier that does not rot.
     pub fn default_model(id: ProviderId) -> &'static str {
         match id {
-            ProviderId::Gemini => "gemini-2.0-flash",
-            ProviderId::Groq => "llama-3.3-70b-versatile",
-            ProviderId::OpenRouter => "meta-llama/llama-3.3-70b-instruct:free",
+            ProviderId::Gemini => "gemini-flash-latest",
+            ProviderId::Groq => "",
+            ProviderId::OpenRouter => "",
         }
     }
 
@@ -505,4 +518,86 @@ pub fn route<T>(
     }
 
     Err(attempts)
+}
+
+/// Which models a provider currently offers, asked of the provider itself.
+///
+/// Hardcoding model IDs into a shipped binary does not survive contact with
+/// reality: providers retire models, and the student cannot rebuild the app.
+/// So the list is fetched live and chosen in Settings.
+pub fn list_models(
+    http: &dyn Http,
+    id: ProviderId,
+    api_key: &str,
+) -> std::result::Result<Vec<String>, AiError> {
+    let (url, headers) = match id {
+        ProviderId::Gemini => (
+            "https://generativelanguage.googleapis.com/v1beta/models".to_string(),
+            vec![("x-goog-api-key".to_string(), api_key.to_string())],
+        ),
+        ProviderId::Groq => (
+            "https://api.groq.com/openai/v1/models".to_string(),
+            vec![("Authorization".to_string(), format!("Bearer {api_key}"))],
+        ),
+        // OpenRouter publishes this without a key.
+        ProviderId::OpenRouter => (
+            "https://openrouter.ai/api/v1/models".to_string(),
+            vec![("Accept".to_string(), "application/json".to_string())],
+        ),
+    };
+
+    // A null body means GET to the client the app supplies.
+    let raw = http
+        .post_json(&url, &headers, &serde_json::Value::Null)
+        .map_err(classify)?;
+    let parsed: serde_json::Value = serde_json::from_str(&raw)
+        .map_err(|e| AiError::BadResponse(format!("the model list was not JSON: {e}")))?;
+
+    let mut models: Vec<String> = match id {
+        ProviderId::Gemini => parsed
+            .get("models")
+            .and_then(|v| v.as_array())
+            .map(|list| {
+                list.iter()
+                    .filter(|m| {
+                        // Only models that can answer a prompt.
+                        m.get("supportedGenerationMethods")
+                            .and_then(|v| v.as_array())
+                            .is_some_and(|methods| {
+                                methods
+                                    .iter()
+                                    .any(|x| x.as_str() == Some("generateContent"))
+                            })
+                    })
+                    .filter_map(|m| m.get("name").and_then(|v| v.as_str()))
+                    // Gemini prefixes these with "models/".
+                    .map(|n| n.trim_start_matches("models/").to_string())
+                    .collect()
+            })
+            .unwrap_or_default(),
+        _ => parsed
+            .get("data")
+            .and_then(|v| v.as_array())
+            .map(|list| {
+                list.iter()
+                    .filter_map(|m| m.get("id").and_then(|v| v.as_str()))
+                    .map(|s| s.to_string())
+                    .collect()
+            })
+            .unwrap_or_default(),
+    };
+
+    if models.is_empty() {
+        return Err(AiError::BadResponse(
+            "the provider returned no usable models".into(),
+        ));
+    }
+
+    // Free models first for OpenRouter, since those are the point here.
+    if id == ProviderId::OpenRouter {
+        models.sort_by_key(|m| (!m.ends_with(":free"), m.clone()));
+    } else {
+        models.sort();
+    }
+    Ok(models)
 }
