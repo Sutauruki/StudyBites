@@ -457,6 +457,19 @@ impl AiProvider for Provider<'_> {
         }
         Ok(text.to_string())
     }
+
+    fn mark_answer(
+        &self,
+        question: &str,
+        expected: &str,
+        typed: &str,
+    ) -> std::result::Result<crate::marking::Mark, AiError> {
+        let raw = self.chat(
+            prompts::MARK_SYSTEM,
+            &prompts::mark_user(question, expected, typed),
+        )?;
+        crate::marking::parse_mark(&raw).map_err(|e| AiError::BadResponse(e.to_string()))
+    }
 }
 
 /// One failed try, so the caller can record quota and report what happened.

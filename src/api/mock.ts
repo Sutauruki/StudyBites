@@ -10,6 +10,7 @@ import type {
   ProviderInfo,
   QueueCounts,
   LicenseStatus,
+  MarkOutcome,
   QueueStatus,
   SchemeEntry,
   SessionSummary,
@@ -135,6 +136,8 @@ function tree(rows: Rows, subjectId: number): Topic[] {
  * with, so it behaves exactly like a build made without a licensing key:
  * already unlocked, and saying so rather than faking an activation.
  */
+const mockTyped: Record<number, boolean> = {};
+
 let mockLicense: LicenseStatus = {
   licensingEnabled: false,
   unlocked: true,
@@ -166,6 +169,45 @@ export const mockBackend: Backend = {
   // The browser preview has no device to fingerprint, so it behaves like a
   // build without a licensing key: unlocked, and honest about why.
   licenseStatus: () => tick(mockLicense),
+
+  // The preview has no provider, so it exercises the local path and then the
+  // graceful fallback — which is the behaviour most worth being able to see.
+  answerMark: (question: string, expected: string, typed: string) => {
+    void question;
+    const words = (t: string): string[] => t.toLowerCase().match(/[a-z0-9]+/g) ?? [];
+    const typedWords = words(typed);
+    const expectedWords = words(expected);
+    if (typedWords.length === 0) {
+      return tick<MarkOutcome>({
+        mark: {
+          verdict: "wrong",
+          score: 0,
+          feedback: "Nothing was written, so there is nothing to mark.",
+          modelAnswer: expected,
+          fromAi: false,
+        },
+        unavailable: null,
+      });
+    }
+    const hit = expectedWords.filter((w) => typedWords.includes(w)).length;
+    const score = Math.round((hit / Math.max(expectedWords.length, 1)) * 100);
+    return tick<MarkOutcome>({
+      mark: {
+        verdict: score >= 80 ? "correct" : score >= 40 ? "close" : "wrong",
+        score,
+        feedback:
+          "Browser preview: this is a rough word-overlap score, not real marking. The Windows build sends borderline answers to your AI provider.",
+        modelAnswer: score >= 80 ? "" : expected,
+        fromAi: false,
+      },
+      unavailable: null,
+    });
+  },
+  typedAnswersGet: (subjectId: number) => tick(mockTyped[subjectId] !== false),
+  typedAnswersSet: (subjectId: number, enabled: boolean) => {
+    mockTyped[subjectId] = enabled;
+    return tick(enabled);
+  },
   eulaText: () => tick(MOCK_EULA),
   eulaAccept: () => {
     mockLicense = { ...mockLicense, eulaAccepted: true };
@@ -446,6 +488,7 @@ export const mockBackend: Backend = {
         card: c,
         isNew: c.isNewCard,
         topicTitle: read().topics.find((t) => t.id === c.topicId)?.title ?? null,
+        subjectId: subjectId ?? read().topics.find((t) => t.id === c.topicId)?.subjectId ?? null,
       })),
     });
   },

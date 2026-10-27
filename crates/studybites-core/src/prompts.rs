@@ -150,3 +150,32 @@ pub fn preview_user(subject: &str, recent: &[String], next_topic: Option<&str>) 
          Set confidence below 0.5 if you are guessing at the course order."
     )
 }
+
+/// Marking a typed answer (Phase 5).
+///
+/// The model is told to mark meaning rather than wording, because the whole
+/// point of letting the student type is that they answer in their own words.
+/// It is also told to keep the model answer back when the student's wording
+/// was already fine — being shown a "better" version of a correct answer every
+/// single time trains people to stop reading the feedback.
+pub const MARK_SYSTEM: &str = "You are a fair, experienced examiner marking a student's \
+written answer. Mark what the answer MEANS, not the words it uses: a correct idea in the \
+student's own words is correct. Be strict about missing content and lenient about phrasing. \
+Never invent material that is not in the expected answer. Reply with JSON only.";
+
+pub fn mark_user(question: &str, expected: &str, typed: &str) -> String {
+    format!(
+        "Question:\n{question}\n\n\
+         Expected answer:\n{expected}\n\n\
+         Student's answer:\n{typed}\n\n\
+         Mark it out of 100 for content. Then reply with JSON only:\n\
+         {{\"score\": 0-100, \"feedback\": \"...\", \"modelAnswer\": \"...\"}}\n\n\
+         Rules:\n\
+         - feedback: one or two sentences, speaking to the student. Say what was right and \
+         what was missing or wrong. Do not repeat the whole answer back.\n\
+         - modelAnswer: how to write this answer so it would earn full marks in an exam. \
+         Keep the student's own understanding, fix only what would cost marks.\n\
+         - If the answer is correct AND already well expressed, set modelAnswer to \"\".\n\
+         - Judge only against the expected answer above."
+    )
+}

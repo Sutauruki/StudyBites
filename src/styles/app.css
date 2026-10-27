@@ -876,3 +876,81 @@ kbd {
   resize: vertical;
   min-height: 5.5em;
 }
+
+/* ---- typed answers ---------------------------------------------------- */
+
+.study__write { display: flex; flex-direction: column; gap: var(--s-4); width: 100%; }
+
+/* Wide and quiet. The student is composing, not filling in a field, so it
+   gets the same measure as the card it answers. */
+.study__answerbox {
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+  font-family: var(--font-read);
+  font-size: var(--fs-lg);
+  line-height: var(--lh-read);
+  resize: vertical;
+  min-height: 7em;
+}
+
+.study__suggestion { text-align: center; font-size: var(--fs-sm); }
+.study__markfail { margin-top: var(--s-4); text-align: center; }
+
+/* The mark sits above the real answer, never in place of it: being told you
+   were wrong is only useful next to what right looks like. */
+.mark {
+  margin-top: var(--s-5);
+  padding: var(--s-4) var(--s-5);
+  border-radius: var(--radius-md);
+  border-left: 3px solid var(--border-strong);
+  background: var(--surface-2);
+  text-align: left;
+  display: grid;
+  gap: var(--s-3);
+}
+.mark--correct { border-left-color: var(--ok); background: var(--ok-soft); }
+.mark--close { border-left-color: var(--accent); background: var(--accent-soft); }
+.mark--wrong { border-left-color: var(--danger); background: var(--danger-soft); }
+
+.mark__head { display: flex; align-items: baseline; gap: var(--s-3); flex-wrap: wrap; }
+
+.mark__verdict {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--fs-lg);
+  letter-spacing: -0.01em;
+}
+.mark--correct .mark__verdict { color: var(--ok); }
+.mark--wrong .mark__verdict { color: var(--danger); }
+
+/* A score is a figure: tabular, so it does not jiggle between cards. */
+.mark__score {
+  font-family: var(--font-display);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+
+.mark__feedback { font-size: var(--fs-md); line-height: var(--lh-body); }
+
+.mark__model {
+  display: grid;
+  gap: var(--s-2);
+  padding-top: var(--s-3);
+  border-top: 1px solid var(--border);
+}
+.mark__model p {
+  font-family: var(--font-read);
+  font-size: var(--fs-md);
+  line-height: var(--lh-read);
+}
+
+/* A switch with its explanation attached, for settings that change how a
+   screen behaves rather than what is on it. */
+.switch { display: flex; align-items: flex-start; gap: var(--s-4); cursor: pointer; }
+.switch input { margin-top: 0.3em; flex: 0 0 auto; }
+.switch__text { display: grid; gap: var(--s-1); }
+.switch__title { font-weight: 600; }
+.switch__text .muted { font-size: var(--fs-sm); line-height: var(--lh-body); }

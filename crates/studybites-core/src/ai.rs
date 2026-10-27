@@ -476,4 +476,15 @@ pub trait AiProvider {
         question: &str,
         notes: &[DistilledNote],
     ) -> std::result::Result<String, AiError>;
+
+    /// Mark a typed answer against the one the card was made from.
+    ///
+    /// Only reached when `marking::quick_mark` could not decide locally, so
+    /// every call here is a genuine judgement about meaning.
+    fn mark_answer(
+        &self,
+        question: &str,
+        expected: &str,
+        typed: &str,
+    ) -> std::result::Result<crate::marking::Mark, AiError>;
 }

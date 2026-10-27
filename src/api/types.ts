@@ -58,10 +58,34 @@ export interface LicenseStatus {
   problem: string | null;
 }
 
+/** Phase 5: how a typed answer was marked. */
+export type Verdict = "correct" | "close" | "wrong";
+
+export interface Mark {
+  verdict: Verdict;
+  /** Out of 100 — "what this would score in an exam". */
+  score: number;
+  feedback: string;
+  /** How to write it for full marks. Empty when the answer was already good. */
+  modelAnswer: string;
+  /** False when decided locally, with no AI request spent. */
+  fromAi: boolean;
+}
+
+export interface MarkOutcome {
+  mark: Mark | null;
+  /** Set when marking could not run; the student grades themselves instead. */
+  unavailable: string | null;
+}
+
 export interface Backend extends Phase2Backend {
   appInfo(): Promise<AppInfo>;
 
   licenseStatus(): Promise<LicenseStatus>;
+
+  answerMark(question: string, expected: string, typed: string): Promise<MarkOutcome>;
+  typedAnswersGet(subjectId: number): Promise<boolean>;
+  typedAnswersSet(subjectId: number, enabled: boolean): Promise<boolean>;
   eulaText(): Promise<string>;
   eulaAccept(): Promise<LicenseStatus>;
   activate(code: string): Promise<LicenseStatus>;
@@ -131,6 +155,8 @@ export interface SessionCard {
   card: Card;
   isNew: boolean;
   topicTitle: string | null;
+  /** A session can span subjects, and typed answers is a per-subject choice. */
+  subjectId: number | null;
 }
 
 export interface StudySession {

@@ -3,6 +3,7 @@ import type {
   AppInfo,
   Backend,
   LicenseStatus,
+  MarkOutcome,
   NewTopic,
   Subject,
   Topic,
@@ -17,6 +18,12 @@ export const tauriBackend: Backend = {
   appInfo: () => invoke<AppInfo>("app_info"),
 
   licenseStatus: () => invoke<LicenseStatus>("license_status"),
+
+  answerMark: (question, expected, typed) =>
+    invoke<MarkOutcome>("answer_mark", { question, expected, typed }),
+  typedAnswersGet: (subjectId) => invoke<boolean>("typed_answers_get", { subjectId }),
+  typedAnswersSet: (subjectId, enabled) =>
+    invoke<boolean>("typed_answers_set", { subjectId, enabled }),
   eulaText: () => invoke<string>("eula_text"),
   eulaAccept: () => invoke<LicenseStatus>("eula_accept"),
   activate: (code) => invoke<LicenseStatus>("activate", { code }),
