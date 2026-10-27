@@ -5,6 +5,7 @@
 
 pub mod ai;
 pub mod base32;
+pub mod cbt;
 pub mod chunk;
 pub mod crypto;
 pub mod db;

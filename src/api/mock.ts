@@ -9,6 +9,10 @@ import type {
   NewTopic,
   ProviderInfo,
   QueueCounts,
+  CbtMarked,
+  CbtResult,
+  CbtSummary,
+  CbtTest,
   LicenseStatus,
   MarkOutcome,
   QueueStatus,
@@ -138,6 +142,41 @@ function tree(rows: Rows, subjectId: number): Topic[] {
  */
 const mockTyped: Record<number, boolean> = {};
 
+interface MockMcq {
+  cardId: number;
+  question: string;
+  options: string[];
+  answer: number;
+  explanation: string;
+  subjectName: string | null;
+  topicTitle: string | null;
+}
+
+let mockTestId = 0;
+const mockPapers: Record<number, MockMcq[]> = {};
+const mockHistory: CbtSummary[] = [];
+
+/** Every multiple-choice card the preview data holds for these subjects. */
+function mockMcqs(subjectIds: number[]): MockMcq[] {
+  const state = read();
+  return state.cards.flatMap((card) => {
+    if (card.payload.kind !== "mcq") return [];
+    const topic = state.topics.find((t) => t.id === card.topicId);
+    if (!topic || !subjectIds.includes(topic.subjectId)) return [];
+    return [
+      {
+        cardId: card.id,
+        question: card.payload.question,
+        options: card.payload.options,
+        answer: card.payload.answer,
+        explanation: card.payload.explanation,
+        subjectName: state.subjects.find((s) => s.id === topic.subjectId)?.name ?? null,
+        topicTitle: topic.title,
+      },
+    ];
+  });
+}
+
 let mockLicense: LicenseStatus = {
   licensingEnabled: false,
   unlocked: true,
@@ -208,6 +247,56 @@ export const mockBackend: Backend = {
     mockTyped[subjectId] = enabled;
     return tick(enabled);
   },
+
+  cbtAvailable: (subjectIds: number[]) => tick(mockMcqs(subjectIds).length),
+  cbtStart: (subjectIds: number[], count: number, minutes: number) => {
+    const pool = mockMcqs(subjectIds);
+    if (pool.length < 5) throw "there are not enough multiple-choice questions yet.";
+    const picked = [...pool].sort(() => Math.random() - 0.5).slice(0, count);
+    mockPapers[++mockTestId] = picked;
+    return tick<CbtTest>({
+      id: mockTestId,
+      minutes,
+      questions: picked.map((p, i) => ({
+        cardId: p.cardId,
+        position: i,
+        question: p.question,
+        options: p.options,
+        subjectName: p.subjectName,
+        topicTitle: p.topicTitle,
+      })),
+    });
+  },
+  cbtSubmit: (testId: number, chosen: Array<number | null>) => {
+    const paper = mockPapers[testId] ?? [];
+    const answers: CbtMarked[] = paper.map((p, i) => ({
+      position: i,
+      question: p.question,
+      options: p.options,
+      correct: p.answer,
+      chosen: chosen[i] ?? null,
+      explanation: p.explanation,
+      topicTitle: p.topicTitle,
+    }));
+    const score = answers.filter((a) => a.chosen === a.correct).length;
+    const total = answers.length;
+    mockHistory.unshift({
+      id: testId,
+      startedAt: new Date().toISOString(),
+      score,
+      total,
+      minutes: 10,
+      subjectNames: [...new Set(paper.map((p) => p.subjectName ?? "Subject"))],
+    });
+    return tick<CbtResult>({
+      testId,
+      score,
+      total,
+      percent: total > 0 ? Math.floor((score * 100) / total) : 0,
+      answers,
+    });
+  },
+  cbtHistory: (limit: number) => tick(mockHistory.slice(0, limit)),
   eulaText: () => tick(MOCK_EULA),
   eulaAccept: () => {
     mockLicense = { ...mockLicense, eulaAccepted: true };

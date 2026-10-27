@@ -1,6 +1,7 @@
 mod commands;
 mod keys;
 mod phase2;
+mod practice;
 mod state;
 mod worker;
 
@@ -72,6 +73,11 @@ pub fn run() {
             phase2::github_token_set,
             phase2::github_token_present,
             phase2::update_check,
+            // Phase 5 — CBT practice tests
+            practice::cbt_available,
+            practice::cbt_start,
+            practice::cbt_submit,
+            practice::cbt_history,
             // Phase 4
             phase2::preview_offer,
             phase2::preview_generate,

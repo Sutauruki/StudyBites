@@ -18,7 +18,10 @@ fn migrations_bring_schema_to_current_version() {
             |r| r.get(0),
         )
         .unwrap();
-    assert_eq!(tables, 12, "the Section 5 tables, plus EULA acceptance");
+    assert_eq!(
+        tables, 14,
+        "the Section 5 tables, plus EULA acceptance and the CBT tables"
+    );
 }
 
 #[test]

@@ -142,6 +142,31 @@ pub const MIGRATIONS: &[&str] = &[
         accepted_at TEXT NOT NULL
     );
     "#,
+    // ---- 003: CBT practice tests (Phase 5) -------------------------------
+    // Kept entirely apart from `card_state` and `review_log`. A practice test
+    // is not a review: letting it drive the scheduler would mean a 40-question
+    // mock quietly rescheduled half the student's deck.
+    r#"
+    CREATE TABLE cbt_tests (
+        id          INTEGER PRIMARY KEY,
+        started_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        ended_at    TEXT,
+        minutes     INTEGER NOT NULL,
+        subject_ids TEXT    NOT NULL,
+        total       INTEGER NOT NULL,
+        score       INTEGER
+    );
+
+    CREATE TABLE cbt_answers (
+        id       INTEGER PRIMARY KEY,
+        test_id  INTEGER NOT NULL REFERENCES cbt_tests(id) ON DELETE CASCADE,
+        card_id  INTEGER REFERENCES cards(id) ON DELETE SET NULL,
+        position INTEGER NOT NULL,
+        chosen   INTEGER,
+        correct  INTEGER NOT NULL DEFAULT 0 CHECK (correct IN (0,1))
+    );
+    CREATE INDEX idx_cbt_answers_test ON cbt_answers(test_id, position);
+    "#,
 ];
 
 pub const SCHEMA_VERSION: i64 = MIGRATIONS.len() as i64;
