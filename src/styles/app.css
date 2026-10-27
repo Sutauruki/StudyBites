@@ -1,4 +1,5 @@
 @import "./tokens.css";
+@import "./fonts.css";
 
 *, *::before, *::after { box-sizing: border-box; }
 html, body, #root { height: 100%; }
@@ -19,9 +20,11 @@ body { user-select: none; }
 
 h1, h2, h3 {
   margin: 0;
+  font-family: var(--font-display);
   line-height: var(--lh-tight);
   letter-spacing: var(--tracking-tight);
   font-weight: 600;
+  text-wrap: balance;
 }
 h1 { font-size: var(--fs-2xl); }
 h2 { font-size: var(--fs-lg); }
@@ -325,10 +328,10 @@ select.input { cursor: pointer; }
   gap: var(--s-4); text-align: center; padding: var(--s-8) var(--s-5);
 }
 .empty__title {
-  font-family: var(--font-read);
+  font-family: var(--font-display);
   font-size: var(--fs-2xl);
   font-weight: 600;
-  letter-spacing: 0;
+  letter-spacing: -0.02em;
 }
 .empty__body { max-width: 46ch; font-size: var(--fs-sm); color: var(--text-muted); }
 
@@ -418,8 +421,8 @@ select.input { cursor: pointer; }
 .study__prompt {
   font-family: var(--font-read);
   font-size: var(--fs-card);
-  line-height: 1.4;
-  letter-spacing: 0;
+  line-height: 1.35;
+  letter-spacing: -0.021em;
   text-align: center;
   text-wrap: balance;
 }
@@ -549,11 +552,11 @@ select.input { cursor: pointer; }
 
 /* The statement: one line per screen, set in the reading serif. */
 .display {
-  font-family: var(--font-read);
+  font-family: var(--font-display);
   font-size: var(--fs-display);
-  line-height: 1.12;
-  letter-spacing: -0.015em;
-  font-weight: 400;
+  line-height: 1.1;
+  letter-spacing: -0.025em;
+  font-weight: 600;
   text-wrap: balance;
   max-width: 20ch;
 }
@@ -565,6 +568,7 @@ select.input { cursor: pointer; }
 
 /* Quiet editorial label, for section headings that must not compete. */
 .label {
+  font-family: var(--font-display);
   font-size: var(--fs-xs);
   font-weight: 600;
   letter-spacing: var(--tracking-label);
@@ -619,7 +623,7 @@ select.input { cursor: pointer; }
 /* Tiles: no shadow, a hairline, and the name doing the work. */
 .tile { box-shadow: none; background: none; }
 .tile:hover { background: var(--surface); }
-.tile__title { font-family: var(--font-read); font-weight: 400; font-size: var(--fs-xl); letter-spacing: 0; }
+.tile__title { font-family: var(--font-display); font-weight: 600; font-size: var(--fs-xl); letter-spacing: -0.015em; }
 
 /* Panels that really are contained keep their surface, but lose the
    competing shadow. */
@@ -688,7 +692,6 @@ select.input { cursor: pointer; }
   height: 22px;
   display: grid;
   place-items: center;
-  font-family: var(--font-mono);
   font-size: var(--fs-sm);
   line-height: 1;
   color: var(--text-faint);
@@ -702,7 +705,6 @@ select.input { cursor: pointer; }
 
 .outline__week {
   flex: 0 0 auto;
-  font-family: var(--font-mono);
   font-size: var(--fs-xs);
   color: var(--text-faint);
   min-width: 2.4em;
@@ -719,7 +721,6 @@ select.input { cursor: pointer; }
 .outline__item--child .outline__title { color: var(--text-muted); }
 
 .outline__count {
-  font-family: var(--font-mono);
   font-size: var(--fs-xs);
   color: var(--text-faint);
 }
@@ -764,9 +765,13 @@ kbd {
   border-radius: 4px;
 }
 
-/* Figures line up: counts, clocks, weeks. */
-.study__clock, .sidebar__count, .mastery__label span:last-child {
-  font-family: var(--font-mono);
+/* Figures line up: counts, clocks, weeks. Tabular numerals in the display
+   face do this without pulling a monospace typeface into the interface. */
+.study__clock, .sidebar__count, .mastery__label span:last-child,
+.outline__week, .outline__count {
+  font-family: var(--font-display);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
 }
 
 /* Badges: small, spaced, washed out. Colour is a scarce resource. */
@@ -781,5 +786,3 @@ kbd {
 .btn:active:not(:disabled) { transform: scale(0.985); }
 .btn { border-radius: var(--radius-sm); }
 
-/* Tighter editorial tracking on the one large line per screen. */
-.display { letter-spacing: -0.025em; }
