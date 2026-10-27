@@ -21,11 +21,9 @@ import { UploadDialog } from "./UploadDialog";
  */
 export function SubjectPage({
   subjectId,
-  onBack,
   onStudy,
 }: {
   subjectId: number;
-  onBack: () => void;
   onStudy: (minutes: number) => void;
 }) {
   const [subject, setSubject] = useState<Subject | null>(null);

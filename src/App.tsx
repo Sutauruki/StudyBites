@@ -160,10 +160,7 @@ export function App() {
           {view.name === "subject" && (
             <SubjectPage
               subjectId={view.id}
-              onBack={() => setView({ name: "home" })}
-              onStudy={(minutes) =>
-                setView({ name: "study", subjectId: view.id, minutes })
-              }
+              onStudy={(minutes) => setView({ name: "study", subjectId: view.id, minutes })}
             />
           )}
           {view.name === "study" && (
