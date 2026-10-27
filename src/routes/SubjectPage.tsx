@@ -1,6 +1,15 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { backend, errorText, type Subject, type Topic } from "../api";
+import {
+  backend,
+  errorText,
+  type ExplainResult,
+  type Material,
+  type Subject,
+  type Topic,
+  type TopicMastery,
+} from "../api";
 import { Banner, Empty, Loading, Modal } from "../components/ui";
+import { UploadDialog } from "./UploadDialog";
 
 /**
  * Subject detail: the scheme-of-work outline editor (Brief 3.2).
@@ -8,21 +17,37 @@ import { Banner, Empty, Loading, Modal } from "../components/ui";
  * The scheme is optional. A subject with no topics is a valid, finished state —
  * the empty text says so instead of nagging.
  */
-export function SubjectPage({ subjectId, onBack }: { subjectId: number; onBack: () => void }) {
+export function SubjectPage({
+  subjectId,
+  onBack,
+  onStudy,
+}: {
+  subjectId: number;
+  onBack: () => void;
+  onStudy: (minutes: number) => void;
+}) {
   const [subject, setSubject] = useState<Subject | null>(null);
   const [topics, setTopics] = useState<Topic[] | null>(null);
+  const [materials, setMaterials] = useState<Material[]>([]);
+  const [mastery, setMastery] = useState<TopicMastery[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [adding, setAdding] = useState<{ parentId: number | null } | null>(null);
   const [editing, setEditing] = useState<Topic | null>(null);
+  const [uploading, setUploading] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
-      const [s, t] = await Promise.all([
+      const [s, t, m, mastered] = await Promise.all([
         backend.subjectGet(subjectId),
         backend.topicsList(subjectId),
+        backend.materialsList(subjectId),
+        backend.mastery(subjectId),
       ]);
       setSubject(s);
       setTopics(t);
+      setMaterials(m);
+      setMastery(mastered);
       setError(null);
     } catch (err) {
       setError(errorText(err));
@@ -56,12 +81,29 @@ export function SubjectPage({ subjectId, onBack }: { subjectId: number; onBack: 
             Scheme of work — optional. {flat.length} topic{flat.length === 1 ? "" : "s"}.
           </p>
         </div>
-        <button className="btn btn--primary" onClick={() => setAdding({ parentId: null })}>
-          Add topic
-        </button>
+        <div className="row">
+          <button className="btn" onClick={() => setAdding({ parentId: null })}>
+            Add topic
+          </button>
+          <button className="btn btn--primary" onClick={() => setUploading(true)}>
+            Add material
+          </button>
+        </div>
       </div>
 
       {error && <Banner kind="error">{error}</Banner>}
+      {notice && <Banner kind="info">{notice}</Banner>}
+
+      <MaterialsSection
+        materials={materials}
+        onChanged={refresh}
+        onError={setError}
+        onStudy={onStudy}
+      />
+
+      <MasterySection mastery={mastery} />
+
+      <ExplainSection subjectId={subjectId} />
 
       {topics === null ? (
         <Loading label="Loading the outline…" />
@@ -104,6 +146,18 @@ export function SubjectPage({ subjectId, onBack }: { subjectId: number; onBack: 
             await backend.topicCreate({ subjectId, parentId: adding.parentId, title, week });
             setAdding(null);
             await refresh();
+          }}
+        />
+      )}
+
+      {uploading && (
+        <UploadDialog
+          subjectId={subjectId}
+          topics={topics ?? []}
+          onClose={() => setUploading(false)}
+          onUploaded={(message) => {
+            setNotice(message);
+            void refresh();
           }}
         />
       )}
@@ -325,5 +379,186 @@ function TopicPrompt({
       </div>
       {error && <Banner kind="error">{error}</Banner>}
     </Modal>
+  );
+}
+
+
+/** Uploads and how far each has got through the pipeline (Brief 3.4). */
+function MaterialsSection({
+  materials,
+  onChanged,
+  onError,
+  onStudy,
+}: {
+  materials: Material[];
+  onChanged: () => void;
+  onError: (message: string) => void;
+  onStudy: (minutes: number) => void;
+}) {
+  const label: Record<Material["status"], string> = {
+    queued: "Queued",
+    processing: "Processing",
+    done: "Ready",
+    failed: "Failed",
+    paused: "Paused — daily limit",
+  };
+
+  if (materials.length === 0) {
+    return (
+      <div className="card" style={{ padding: "var(--s-5)" }}>
+        <div className="stack">
+          <h2>No material yet</h2>
+          <p className="muted">
+            Add today&rsquo;s notes or a lecture PDF. StudyBites reads it, writes compact notes
+            and cards, and files them under the topic you confirm.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  const ready = materials.some((m) => m.status === "done" && m.cardCount > 0);
+
+  return (
+    <div className="stack">
+      <div className="row">
+        <h2>Material</h2>
+        <span className="topbar__spacer" />
+        {ready && (
+          <button className="btn btn--primary" onClick={() => onStudy(10)}>
+            Study this subject
+          </button>
+        )}
+      </div>
+
+      <div className="card list">
+        {materials.map((material) => (
+          <div key={material.id} className="list__item list__item--static">
+            <div className="list__text">
+              <div className="list__title">{material.originalFilename}</div>
+              <div className="list__meta">
+                {label[material.status]}
+                {material.cardCount > 0 && ` · ${material.cardCount} cards`}
+                {material.error && material.status === "failed" && ` · ${material.error}`}
+              </div>
+            </div>
+            <button
+              className="btn btn--ghost"
+              onClick={async () => {
+                try {
+                  const destination = await backend.pickSavePath(material.originalFilename);
+                  if (destination) await backend.materialSaveOriginal(material.id, destination);
+                } catch (err) {
+                  onError(errorText(err));
+                }
+              }}
+            >
+              Download original
+            </button>
+            <button
+              className="btn btn--danger"
+              onClick={async () => {
+                if (!window.confirm(`Remove “${material.originalFilename}” and its cards?`)) return;
+                try {
+                  await backend.materialDelete(material.id);
+                  onChanged();
+                } catch (err) {
+                  onError(errorText(err));
+                }
+              }}
+            >
+              Remove
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** A simple bar per topic (Brief 3.6). */
+function MasterySection({ mastery }: { mastery: TopicMastery[] }) {
+  const withCards = mastery.filter((m) => m.totalCards > 0);
+  if (withCards.length === 0) return null;
+
+  return (
+    <div className="stack">
+      <h2>Progress</h2>
+      <div className="card" style={{ padding: "var(--s-5)" }}>
+        {withCards.map((topic) => (
+          <div key={topic.topicId} className="mastery">
+            <div className="mastery__label">
+              <span>{topic.title}</span>
+              <span className="muted">
+                {topic.studiedCards}/{topic.totalCards}
+                {topic.dueNow > 0 && ` · ${topic.dueNow} due`}
+              </span>
+            </div>
+            <div className="mastery__track">
+              <div
+                className="mastery__fill"
+                style={{ width: `${Math.round(Math.min(topic.mastery, 1) * 100)}%` }}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Ask a question, answered only from this subject's notes (Brief 3.8). */
+function ExplainSection({ subjectId }: { subjectId: number }) {
+  const [question, setQuestion] = useState("");
+  const [result, setResult] = useState<ExplainResult | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const ask = async () => {
+    if (!question.trim()) return;
+    setBusy(true);
+    setError(null);
+    try {
+      setResult(await backend.explain(subjectId, question));
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="stack">
+      <h2>Ask about this subject</h2>
+      <div className="card" style={{ padding: "var(--s-5)" }}>
+        <div className="row">
+          <input
+            className="input"
+            value={question}
+            placeholder="Why does log(ab) equal log a + log b?"
+            onChange={(e) => setQuestion(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !busy) void ask();
+            }}
+          />
+          <button className="btn btn--primary" onClick={ask} disabled={busy || !question.trim()}>
+            {busy ? "Thinking…" : "Ask"}
+          </button>
+        </div>
+        <p className="muted" style={{ marginTop: "var(--s-2)" }}>
+          Answered only from your own uploaded notes for this subject.
+        </p>
+
+        {error && <Banner kind="error">{error}</Banner>}
+        {result && (
+          <div className="stack selectable" style={{ marginTop: "var(--s-4)" }}>
+            <p>{result.answer}</p>
+            {result.sources.length > 0 && (
+              <p className="muted">From your notes: {result.sources.join(", ")}</p>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }

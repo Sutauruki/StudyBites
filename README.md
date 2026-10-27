@@ -6,9 +6,9 @@ spaced repetition.
 
 Proprietary software — see [`LICENSE`](LICENSE). Not open source.
 
-**Current state: Phase 1 complete** — the app shell, the encrypted database,
-subjects, and the scheme-of-work outline editor. Uploads, AI and study sessions
-arrive in Phase 2; activation and device-locked encryption in Phase 3.
+**Current state: Phase 2 complete** — subjects and the scheme of work, plus
+uploads, AI-written notes and cards, spaced-repetition study sessions, Explain,
+and update checking. Activation and device-locked encryption arrive in Phase 3.
 
 ---
 
@@ -106,14 +106,49 @@ wrapper that locks the database and forwards calls.
 
 ---
 
-## What Phase 1 does
+## Using it
 
-- Create, rename, archive, restore and delete subjects.
-- Build an optional scheme of work per subject: topics and subtopics, optional
-  week numbers, reorder with the arrow buttons, edit and delete.
-- Light, dark and system themes; the choice is remembered in the database.
-- An encrypted SQLite database (SQLCipher) created on first launch under the
-  app data directory, with versioned migrations.
+### First run
+
+1. **Create a subject** for one of your courses.
+2. **Add an AI key** in Settings. StudyBites uses your own free key — Gemini is
+   tried first, with Groq and OpenRouter as fallbacks when a daily limit is
+   reached. Settings links straight to where each one is issued. Keys go into
+   Windows' credential store, never into the app's database.
+3. Optionally **sketch the scheme of work** for the subject: topics, subtopics
+   and week numbers. You can skip this and add topics as you go.
+
+### Every day
+
+1. **Add material** — a lecture PDF, a DOCX, or a text file.
+2. **Confirm the topic.** If there is a scheme of work, the AI pre-selects the
+   topic it thinks the material belongs to; confirm it, pick another, or choose
+   "Something else" and describe it. Nothing is filed silently.
+3. StudyBites reads the file, splits it by heading and paragraph, and has the
+   AI write compact notes and a few cards per section. This runs in the
+   background — the window stays usable, and you can study while it works.
+4. **Start a bite** from the home screen: 5, 10 or 15 minutes. Due reviews come
+   first, then a few new cards, capped so it never feels heavy.
+5. When the time is up the session ends with a short summary. Tomorrow, what
+   you studied comes back when it is due.
+
+During a session: **Space** reveals, **1–4** grade (Again / Hard / Good / Easy),
+**Esc** ends.
+
+### Other things it does
+
+- **Ask about a subject** — answers come only from your own uploaded notes for
+  that subject, and the notes used are listed so you can check them.
+- **Progress bars per topic**, from how well the cards have stuck.
+- **Download original** gives back any file you uploaded, byte for byte.
+- **Check for updates** in Settings tells you when a newer build exists. It
+  never downloads or installs anything by itself.
+
+### If the daily AI limit is reached
+
+Processing pauses and resumes by itself after the limit resets — nothing is
+lost, and nothing has to be re-uploaded. Studying keeps working completely
+offline in the meantime.
 
 ### On the database key
 
