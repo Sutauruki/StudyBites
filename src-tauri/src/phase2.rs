@@ -19,6 +19,9 @@ use tauri::{Emitter, State};
 type Ipc<T> = Result<T, String>;
 
 fn lock<'a>(state: &'a State<'_, AppState>) -> Result<MutexGuard<'a, Db>, String> {
+    if !state.is_unlocked() {
+        return Err(crate::state::NOT_ACTIVATED.to_string());
+    }
     state.db.lock().map_err(|_| LOCK_FAILED.to_string())
 }
 
@@ -121,10 +124,13 @@ pub async fn material_upload(
     let bytes = files::read_checked(&file).map_err(to_ipc)?;
     let app_data = state.app_data.clone();
 
+    let file_key = state.file_key();
     let accepted = {
         let mut db = lock(&state)?;
-        ingest::accept_upload(&mut db, &app_data, subject_id, topic_id, &filename, &bytes)
-            .map_err(to_ipc)?
+        ingest::accept_upload(
+            &mut db, &app_data, &file_key, subject_id, topic_id, &filename, &bytes,
+        )
+        .map_err(to_ipc)?
     };
 
     if accepted.duplicate_of.is_none() {
@@ -188,7 +194,7 @@ pub async fn material_save_original(
         .cold_path
         .ok_or("the original file was not kept for this upload")?;
 
-    let bytes = files::cold_read(&app_data, &cold).map_err(to_ipc)?;
+    let bytes = files::cold_read(&app_data, &state.file_key(), &cold).map_err(to_ipc)?;
     std::fs::write(&destination, bytes).map_err(|e| format!("could not save the file: {e}"))?;
     Ok(destination)
 }

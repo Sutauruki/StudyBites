@@ -18,9 +18,22 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 # Cold storage: compress, then (Phase 3) encrypt.
 zstd = "0.13"
 sha2 = "0.10"
+# Phase 3 — licensing and encryption at rest.
+# Verification only in the app; signing lives in the license-tool crate.
+ed25519-dalek = "2"
+hkdf = "0.12"
+chacha20poly1305 = { version = "0.10", default-features = false, features = ["alloc", "getrandom"] }
+zeroize = { version = "1", features = ["derive"] }
+getrandom = "0.2"
+
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+# Device fingerprint: registry reads only. No WMI, no COM, no spawning wmic.
+winreg = "0.52"
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Storage_FileSystem"] }
 
 [dev-dependencies]
 tempfile = "3"

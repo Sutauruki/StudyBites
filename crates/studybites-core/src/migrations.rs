@@ -128,6 +128,20 @@ pub const MIGRATIONS: &[&str] = &[
         value TEXT NOT NULL
     );
     "#,
+    // ---- 002: EULA acceptance (Brief Section 13) -------------------------
+    // Every acceptance is kept rather than overwritten, so that re-accepting
+    // a revised agreement leaves a record of what was agreed and when.
+    //
+    // The licence itself is deliberately NOT here: the database key is derived
+    // from it, so it has to be readable before the database can be opened.
+    // It lives beside the database as a signed file (see `license::stored`).
+    r#"
+    CREATE TABLE eula_acceptance (
+        id          INTEGER PRIMARY KEY,
+        version     TEXT NOT NULL,
+        accepted_at TEXT NOT NULL
+    );
+    "#,
 ];
 
 pub const SCHEMA_VERSION: i64 = MIGRATIONS.len() as i64;

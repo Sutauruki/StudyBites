@@ -54,6 +54,7 @@ pub struct Accepted {
 pub fn accept_upload(
     db: &mut Db,
     app_data: &std::path::Path,
+    file_key: &crate::crypto::SecretKey,
     subject_id: i64,
     topic_id: Option<i64>,
     filename: &str,
@@ -72,7 +73,7 @@ pub fn accept_upload(
         });
     }
 
-    let cold_path = crate::files::cold_store(app_data, &extracted.sha256, bytes)?;
+    let cold_path = crate::files::cold_store(app_data, file_key, &extracted.sha256, bytes)?;
     let material = library::material_create(
         db,
         &NewMaterial {

@@ -1,0 +1,21 @@
+[package]
+name = "license-tool"
+description = "StudyBites admin tool: issue activation codes. Owner's machine only."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+publish = false
+license-file = "../../LICENSE"
+
+[[bin]]
+name = "license-tool"
+path = "src/main.rs"
+
+[dependencies]
+# The same code that the app verifies with, so the two can never drift apart.
+studybites-core = { path = "../studybites-core" }
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+getrandom = "0.2"
+serde = { workspace = true }
+serde_json = { workspace = true }

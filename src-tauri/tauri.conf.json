@@ -33,7 +33,8 @@
     "targets": ["nsis"],
     "icon": ["icons/icon.ico", "icons/icon.png"],
     "resources": {
-      "../THIRD-PARTY-NOTICES.md": "THIRD-PARTY-NOTICES.md"
+      "../THIRD-PARTY-NOTICES.md": "THIRD-PARTY-NOTICES.md",
+      "resources/EULA.md": "EULA.md"
     },
     "copyright": "Copyright (c) 2026 Odejayi Ezekiel (Sutauruki). All rights reserved.",
     "category": "Education",

@@ -4,8 +4,11 @@
 //! it builds and tests on Linux (Codespaces / CI) without a WebView.
 
 pub mod ai;
+pub mod base32;
 pub mod chunk;
+pub mod crypto;
 pub mod db;
+pub mod device;
 pub mod embed;
 pub mod error;
 pub mod files;
@@ -13,6 +16,7 @@ pub mod fsrs;
 pub mod ingest;
 pub mod jobs;
 pub mod library;
+pub mod license;
 pub mod migrations;
 pub mod models;
 pub mod preview;
@@ -26,9 +30,12 @@ pub mod update;
 
 pub use ai::{AiError, AiProvider, DistilledNote, GeneratedCard, ProviderId};
 pub use chunk::{chunk_text, Chunk};
-pub use db::Db;
+pub use crypto::{DeviceKeys, SecretKey};
+pub use db::{Db, Key};
+pub use device::DeviceProfile;
 pub use embed::{Embedder, LexicalEmbedder};
 pub use error::{CoreError, Result};
 pub use fsrs::{Memory, Rating, State};
 pub use jobs::{Job, JobStatus};
+pub use license::{License, VerifiedLicense};
 pub use models::{NewTopic, Subject, Topic};

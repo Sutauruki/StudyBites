@@ -160,6 +160,79 @@ which copying the database to another machine stops working.
 
 ---
 
+## Licensing and activation
+
+StudyBites is sold per device. A copy works only on the computer it was
+activated for, so passing the installer or the app folder to a friend gets
+them nothing.
+
+### One-time setup (owner)
+
+Activation needs an Ed25519 key pair. **The private half must never be
+committed to this repository or shipped inside the app.** Generate it once,
+on your own machine, from the admin tool:
+
+```bash
+license-tool keygen --key owner.key
+```
+
+That prints a public key. Add it to this repository as an Actions secret
+named `STUDYBITES_LICENSE_PUBKEY` (Settings → Secrets and variables →
+Actions). The next Windows build compiles it in and requires activation.
+
+Back `owner.key` up somewhere safe. It cannot be recovered, and generating a
+new one invalidates every licence already sold. The tool refuses to overwrite
+an existing key file for that reason.
+
+Until the secret is set, builds still work — they run unlicensed and say so
+in Settings → About. Nothing breaks while you are getting set up.
+
+`license-tool.exe` is published as a workflow artifact by the Windows build,
+so you do not need Rust installed to issue codes.
+
+### Activating a copy (with a buyer)
+
+1. The student installs StudyBites, accepts the agreement, and reads you the
+   **request code** from the activation screen — about 23 characters.
+2. You run:
+
+   ```bash
+   license-tool issue --key owner.key --request <REQUEST CODE> --buyer "Their Name"
+   ```
+
+3. Send them the **activation code** it prints. It is long, so paste it into
+   a message rather than reading it out; the app's box accepts a paste.
+4. They paste it in and the app unlocks. No internet is involved at any point.
+
+Issued licences are recorded in `owner.licenses.json` beside the key, which
+is gitignored. `license-tool list --key owner.key` shows them.
+
+### Reinstalls
+
+Reinstalling on the same computer works with the same activation code —
+re-issuing produces the identical code, by design, because the code is half
+the key to that student's database. Issuing a *new* secret for a machine
+that already has one would destroy their notes, so the tool deliberately
+reuses the old one.
+
+A new computer, or a Windows reinstall, needs a new code.
+
+### What this does and does not do
+
+Be clear-eyed about it: **no software running on a machine the user controls
+is unbreakable.** Someone determined and skilled could patch the binary. The
+goal is narrower and achievable — make *copying* useless:
+
+* The database and the stored originals are encrypted with a key derived from
+  the machine and the licence. Copying the data folder to another PC produces
+  a different key, and the files simply do not open.
+* An activation code for one machine is refused on another, even though its
+  signature is genuine.
+* A forged or edited code fails signature verification.
+
+So casual sharing — the actual risk among students — gets nowhere, and
+cracking it is more work than the app costs.
+
 ## Privacy
 
 No telemetry, no analytics, no crash reporting. Nothing leaves the device in

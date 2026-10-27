@@ -21,6 +21,7 @@ src-tauri/resources/models/
 *secret*
 license-keys/
 licenses.json
+*.licenses.json
 .env
 .env.*
 !.env.example
