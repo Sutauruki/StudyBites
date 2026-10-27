@@ -37,3 +37,6 @@ Thumbs.db
 *.db-shm
 *.db-wal
 *.sqlite
+
+# Downloaded NOUN course material used for local testing only
+testdata/
