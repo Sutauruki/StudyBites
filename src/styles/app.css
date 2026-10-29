@@ -343,6 +343,8 @@ select.input { cursor: pointer; }
   background: var(--surface-2);
   color: var(--text-muted);
   display: flex; align-items: center; gap: var(--s-2); flex-wrap: wrap;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .banner--error { background: var(--danger-soft); color: var(--danger); border-color: transparent; }
 .banner--info { background: var(--accent-soft); color: var(--accent); border-color: var(--accent-border); }
@@ -796,13 +798,17 @@ kbd {
   display: grid;
   place-items: start center;
   overflow-y: auto;
-  padding: clamp(var(--s-5), 6vh, var(--s-9)) var(--s-5) var(--s-8);
+  padding: calc(clamp(var(--s-5), 6vh, var(--s-9)) + env(safe-area-inset-top))
+    max(var(--s-5), env(safe-area-inset-left))
+    calc(var(--s-8) + env(safe-area-inset-bottom))
+    max(var(--s-5), env(safe-area-inset-right));
   background: var(--bg);
 }
 
 .gate__inner {
   width: 100%;
   max-width: 58ch;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: var(--s-5);
@@ -813,6 +819,7 @@ kbd {
   font-size: var(--fs-lg);
   line-height: var(--lh-read);
   max-width: var(--measure);
+  overflow-wrap: anywhere;
 }
 
 /* The agreement scrolls inside its own frame, so the accept control stays
@@ -826,6 +833,7 @@ kbd {
   border-radius: var(--radius-md);
   font-size: var(--fs-sm);
   line-height: var(--lh-read);
+  overflow-wrap: anywhere;
 }
 .gate__doc:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .gate__doc > * + * { margin-top: var(--s-4); }
@@ -1119,4 +1127,217 @@ kbd {
   font-size: var(--fs-sm);
   color: var(--text-muted);
   line-height: var(--lh-body);
+}
+
+/* ---- phone app shell -------------------------------------------------
+   Phones use a compact bottom navigation and full-width reading surfaces.
+   The desktop sidebar and spacious editorial layout remain unchanged above
+   this breakpoint. */
+@media (max-width: 600px) {
+  :root {
+    --fs-card: 1.55rem;
+    --s-8: 40px;
+  }
+
+  html, body, #root { min-height: 100%; }
+  body { font-size: var(--fs-md); }
+  button, select, input, textarea { touch-action: manipulation; }
+
+  .app {
+    display: flex;
+    flex-direction: column;
+    min-height: 100dvh;
+    height: auto;
+  }
+
+  .main {
+    order: 1;
+    flex: 1 1 auto;
+    overflow: visible;
+    min-height: 0;
+  }
+
+  .content {
+    min-height: calc(100dvh - 72px);
+    padding: max(20px, env(safe-area-inset-top)) 16px
+      calc(28px + env(safe-area-inset-bottom));
+    gap: 24px;
+  }
+
+  .gate {
+    min-height: 100svh;
+    min-height: 100dvh;
+    padding: max(48px, calc(env(safe-area-inset-top) + 24px))
+      max(20px, env(safe-area-inset-left))
+      max(32px, env(safe-area-inset-bottom))
+      max(20px, env(safe-area-inset-right));
+  }
+  .gate__inner { gap: 20px; }
+  .gate__lede { font-size: var(--fs-md); }
+  .gate__doc {
+    max-height: 42dvh;
+    padding: 16px;
+  }
+  .gate__agree {
+    align-items: flex-start;
+    line-height: 1.45;
+  }
+  .gate__agree input {
+    flex: 0 0 auto;
+    width: 22px;
+    height: 22px;
+    margin: 0.1em 4px 0 0;
+  }
+  .gate .action,
+  .gate .action .btn { width: 100%; }
+
+  .sidebar {
+    order: 2;
+    position: sticky;
+    bottom: 0;
+    z-index: 10;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    flex: 0 0 auto;
+    align-items: stretch;
+    gap: 4px;
+    min-height: 68px;
+    padding: 6px 8px max(6px, env(safe-area-inset-bottom));
+    background: color-mix(in srgb, var(--surface) 94%, transparent);
+    border-top: 1px solid var(--border);
+    border-bottom: 0;
+    box-shadow: 0 -8px 24px rgba(42, 37, 32, 0.08);
+    backdrop-filter: blur(14px);
+    overflow: visible;
+  }
+
+  .sidebar__brand,
+  .sidebar__label,
+  .sidebar__subjects,
+  .dev-badge { display: none; }
+
+  .sidebar__group,
+  .sidebar__foot { display: contents; }
+
+  .sidebar__link {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    min-width: 0;
+    justify-content: center;
+    min-height: 54px;
+    padding: 6px 4px;
+    border-radius: var(--radius-md);
+    text-align: center;
+    font-size: var(--fs-xs);
+    color: var(--text-muted);
+  }
+
+  .sidebar__link[aria-current="page"] {
+    color: var(--accent);
+    background: var(--accent-soft);
+  }
+
+  .sidebar__link span:first-child {
+    flex: 0 0 auto;
+    max-width: 100%;
+    line-height: 1.15;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .sidebar__count {
+    position: absolute;
+    top: 2px;
+    right: calc(50% - 30px);
+    margin: 0;
+    padding: 1px 5px;
+    font-size: 0.65rem;
+  }
+
+  .page-head { gap: 12px; }
+  .page-head > .row,
+  .empty .row { width: 100%; }
+  .page-head > .row > .btn,
+  .empty .row > .btn { flex: 1 1 100%; width: 100%; }
+  h1, .display { font-size: var(--fs-2xl); }
+  .page-head .btn,
+  .action .btn,
+  .content > .btn { width: 100%; }
+
+  .btn {
+    min-height: 46px;
+    padding: 10px 14px;
+  }
+  .btn--icon { min-width: 44px; min-height: 44px; }
+  .input { min-height: 46px; }
+  .row > .btn { flex: 1 1 auto; }
+
+  .card,
+  .bite,
+  .study__card { border-radius: var(--radius-md); }
+  .card--pad,
+  .bite { padding: 20px 16px; }
+  .tile { padding: 18px 4px; }
+  .tile__title { font-size: var(--fs-lg); }
+
+  .list__item {
+    min-height: 58px;
+    padding: 14px 12px;
+  }
+  .list__item--child { padding-left: 28px; }
+
+  .modal__scrim {
+    align-items: flex-end;
+    padding: 0;
+  }
+  .modal {
+    max-height: min(90dvh, 720px);
+    border-radius: 18px 18px 0 0;
+    padding: 20px 16px max(20px, env(safe-area-inset-bottom));
+  }
+  .modal__actions {
+    flex-direction: column-reverse;
+  }
+  .modal__actions .btn { width: 100%; }
+
+  .study__bar {
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    padding: 4px 0 10px;
+    background: var(--bg);
+  }
+  .study__card {
+    min-height: 48dvh;
+    padding: 28px 4px;
+  }
+  .study__prompt { font-size: var(--fs-card); }
+  .study__answer { font-size: var(--fs-lg); }
+  .study__grades {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .study__grades .btn {
+    min-height: 64px;
+    padding: 10px 6px;
+  }
+
+  .outline__row { min-height: 48px; }
+  .outline__actions { opacity: 1; pointer-events: auto; }
+  .outline__actions .btn { min-height: 40px; }
+  .outline__children { padding-left: 18px; }
+
+  .key-row { padding: 16px 0; }
+  .key-row__controls { align-items: stretch; }
+  .key-row__controls .input,
+  .key-row__controls .btn { flex: 1 1 100%; }
+  .scheme__row { padding: 12px 0; }
+
+  .cbt__body { grid-template-columns: 1fr; }
+  .cbt__grid { grid-template-columns: repeat(6, minmax(32px, 1fr)); padding: 12px; }
+  .cbt__cell { min-height: 40px; }
 }

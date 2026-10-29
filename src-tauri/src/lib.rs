@@ -9,9 +9,11 @@ use state::AppState;
 use std::sync::Arc;
 use tauri::Manager;
 
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let state = AppState::load(app.handle())?;
@@ -47,7 +49,11 @@ pub fn run() {
             commands::setting_set,
             // Phase 2
             phase2::material_upload,
+            phase2::material_upload_bytes,
+            phase2::material_upload_uri,
             phase2::file_preview_text,
+            phase2::file_preview_text_bytes,
+            phase2::file_preview_text_uri,
             phase2::materials_list,
             phase2::material_set_topic,
             phase2::material_delete,

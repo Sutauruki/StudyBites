@@ -32,22 +32,24 @@ fn model_key(id: ProviderId) -> String {
     format!("ai.model.{}", id.as_str())
 }
 
-fn providers<'a>(db: &Db, http: &'a dyn Http) -> Vec<Provider<'a>> {
-    ProviderId::default_order()
-        .into_iter()
-        .filter_map(|id| {
-            let key = keys::provider_key(id)?;
-            let chosen = db
-                .setting(&model_key(id))
-                .ok()
-                .flatten()
-                .unwrap_or_default();
-            let provider = Provider::new(id, key, http).with_model(chosen);
-            // Without a model there is nothing to call, so skip rather than
-            // spend a request discovering that.
-            (!provider.model.trim().is_empty()).then_some(provider)
-        })
-        .collect()
+fn providers<'a>(db: &Db, http: &'a dyn Http) -> Ipc<Vec<Provider<'a>>> {
+    let mut list = Vec::new();
+    for id in ProviderId::default_order() {
+        let Some(key) = keys::provider_key(db, id)? else {
+            continue;
+        };
+        let chosen = db
+            .setting(&model_key(id))
+            .map_err(to_ipc)?
+            .unwrap_or_default();
+        let provider = Provider::new(id, key, http).with_model(chosen);
+        // Without a model there is nothing to call, so skip rather than
+        // spend a request discovering that.
+        if !provider.model.trim().is_empty() {
+            list.push(provider);
+        }
+    }
+    Ok(list)
 }
 
 fn require_providers<'a>(
@@ -56,7 +58,7 @@ fn require_providers<'a>(
 ) -> Ipc<Vec<Provider<'a>>> {
     let list = {
         let db = lock(state)?;
-        providers(&db, http)
+        providers(&db, http)?
     };
     if list.is_empty() {
         return Err(
@@ -139,6 +141,54 @@ pub async fn material_upload(
     Ok(accepted)
 }
 
+#[tauri::command]
+pub async fn material_upload_bytes(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    subject_id: i64,
+    topic_id: Option<i64>,
+    filename: String,
+    bytes: Vec<u8>,
+) -> Ipc<ingest::Accepted> {
+    if bytes.len() as u64 > studybites_core::files::MAX_FILE_BYTES {
+        return Err("that file is larger than the 64 MB limit".into());
+    }
+    if bytes.is_empty() {
+        return Err("that file is empty".into());
+    }
+    let app_data = state.app_data.clone();
+    let file_key = state.file_key();
+    let accepted = {
+        let mut db = lock(&state)?;
+        ingest::accept_upload(
+            &mut db, &app_data, &file_key, subject_id, topic_id, &filename, &bytes,
+        )
+        .map_err(to_ipc)?
+    };
+    if accepted.duplicate_of.is_none() {
+        crate::worker::wake(&app);
+    }
+    Ok(accepted)
+}
+
+#[tauri::command]
+pub async fn material_upload_uri(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    subject_id: i64,
+    topic_id: Option<i64>,
+    uri: String,
+    filename: String,
+) -> Ipc<ingest::Accepted> {
+    use tauri_plugin_fs::FsExt;
+    let uri = tauri::Url::parse(&uri).map_err(|e| format!("invalid selected file URI: {e}"))?;
+    let bytes = app
+        .fs()
+        .read(uri)
+        .map_err(|e| format!("the selected file could not be read: {e}"))?;
+    material_upload_bytes(app, state, subject_id, topic_id, filename, bytes).await
+}
+
 /// Read a file's text without storing anything, for the topic-match preview
 /// and for scheme-of-work parsing.
 #[tauri::command]
@@ -146,6 +196,36 @@ pub async fn file_preview_text(path: String) -> Ipc<String> {
     let file = std::path::PathBuf::from(&path);
     let extracted = files::extract(&file).map_err(to_ipc)?;
     // A few thousand characters is all the model is shown anyway.
+    Ok(extracted.text.chars().take(4_000).collect())
+}
+
+#[tauri::command]
+pub async fn file_preview_text_bytes(filename: String, bytes: Vec<u8>) -> Ipc<String> {
+    if bytes.len() as u64 > studybites_core::files::MAX_FILE_BYTES {
+        return Err("that file is larger than the 64 MB limit".into());
+    }
+    let extracted =
+        files::extract_from_bytes(std::path::Path::new(&filename), &bytes).map_err(to_ipc)?;
+    Ok(extracted.text.chars().take(4_000).collect())
+}
+
+#[tauri::command]
+pub async fn file_preview_text_uri(
+    app: tauri::AppHandle,
+    uri: String,
+    filename: String,
+) -> Ipc<String> {
+    use tauri_plugin_fs::FsExt;
+    let uri = tauri::Url::parse(&uri).map_err(|e| format!("invalid selected file URI: {e}"))?;
+    let bytes = app
+        .fs()
+        .read(uri)
+        .map_err(|e| format!("the selected file could not be read: {e}"))?;
+    if bytes.is_empty() {
+        return Err("the selected file was empty".into());
+    }
+    let extracted =
+        files::extract_from_bytes(std::path::Path::new(&filename), &bytes).map_err(to_ipc)?;
     Ok(extracted.text.chars().take(4_000).collect())
 }
 
@@ -585,43 +665,51 @@ pub struct ProviderInfo {
     pub configured: bool,
     pub help_url: String,
     pub default_model: String,
+    pub selected_model: String,
 }
 
 /// The model in effect for a provider: the chosen one, else the default.
-fn chosen_model(db: &Db, id: ProviderId) -> String {
-    db.setting(&model_key(id))
-        .ok()
-        .flatten()
-        .filter(|m| !m.trim().is_empty())
-        .unwrap_or_else(|| Provider::default_model(id).to_string())
+fn chosen_model(db: &Db, id: ProviderId) -> Ipc<String> {
+    db.setting(&model_key(id)).map_err(to_ipc).map(|model| {
+        model
+            .filter(|model| !model.trim().is_empty())
+            .map(|model| model.trim().to_string())
+            .unwrap_or_else(|| Provider::default_model(id).to_string())
+    })
 }
 
 #[tauri::command]
 pub fn providers_list(state: State<AppState>) -> Ipc<Vec<ProviderInfo>> {
     let db = lock(&state)?;
-    let configured = keys::configured();
-    Ok(ProviderId::default_order()
+    let configured = keys::configured(&db)?;
+    ProviderId::default_order()
         .into_iter()
-        .map(|id| ProviderInfo {
-            id: id.as_str().to_string(),
-            label: match id {
-                ProviderId::Gemini => "Google Gemini".into(),
-                ProviderId::Groq => "Groq".into(),
-                ProviderId::OpenRouter => "OpenRouter".into(),
-            },
-            configured: configured.contains(&id),
-            help_url: id.key_help_url().to_string(),
-            default_model: chosen_model(&db, id),
+        .map(|id| {
+            Ok(ProviderInfo {
+                id: id.as_str().to_string(),
+                label: match id {
+                    ProviderId::Gemini => "Google Gemini".into(),
+                    ProviderId::Groq => "Groq".into(),
+                    ProviderId::OpenRouter => "OpenRouter".into(),
+                },
+                configured: configured.contains(&id),
+                help_url: id.key_help_url().to_string(),
+                default_model: Provider::default_model(id).to_string(),
+                selected_model: chosen_model(&db, id)?,
+            })
         })
-        .collect())
+        .collect()
 }
 
 /// The models a provider currently offers, asked of the provider itself.
 #[tauri::command]
-pub async fn provider_models(provider: String) -> Ipc<Vec<String>> {
+pub async fn provider_models(state: State<'_, AppState>, provider: String) -> Ipc<Vec<String>> {
     let id = ProviderId::parse(&provider).ok_or("that is not a provider StudyBites knows")?;
     // OpenRouter publishes its list without a key; the others need one.
-    let key = keys::provider_key(id).unwrap_or_default();
+    let key = {
+        let db = lock(&state)?;
+        keys::provider_key(&db, id)?.unwrap_or_default()
+    };
     if key.is_empty() && id != ProviderId::OpenRouter {
         return Err("Add this provider's key first, then its models can be listed.".into());
     }
@@ -638,31 +726,36 @@ pub fn provider_model_set(state: State<AppState>, provider: String, model: Strin
 
 /// Save a provider key. An empty value removes it.
 #[tauri::command]
-pub fn provider_key_set(provider: String, key: String) -> Ipc<()> {
+pub fn provider_key_set(state: State<AppState>, provider: String, key: String) -> Ipc<()> {
     let id = ProviderId::parse(&provider).ok_or("that is not a provider StudyBites knows")?;
-    keys::set_provider_key(id, &key)
+    let db = lock(&state)?;
+    keys::set_provider_key(&db, id, &key)
 }
 
 #[tauri::command]
-pub fn github_token_set(token: String) -> Ipc<()> {
-    keys::set_github_token(&token)
+pub fn github_token_set(state: State<AppState>, token: String) -> Ipc<()> {
+    let db = lock(&state)?;
+    keys::set_github_token(&db, &token)
 }
 
 #[tauri::command]
-pub fn github_token_present() -> Ipc<bool> {
-    Ok(keys::github_token().is_some())
+pub fn github_token_present(state: State<AppState>) -> Ipc<bool> {
+    let db = lock(&state)?;
+    Ok(keys::github_token(&db)?.is_some())
 }
 
 /// Check whether a newer build exists. Never downloads or installs anything.
 #[tauri::command]
 pub async fn update_check(state: State<'_, AppState>) -> Ipc<update::UpdateStatus> {
-    let feed = {
+    let (feed, token) = {
         let db = lock(&state)?;
-        db.setting(update::SETTING_FEED)
-            .map_err(to_ipc)?
-            .unwrap_or_else(|| update::DEFAULT_FEED.to_string())
+        (
+            db.setting(update::SETTING_FEED)
+                .map_err(to_ipc)?
+                .unwrap_or_else(|| update::DEFAULT_FEED.to_string()),
+            keys::github_token(&db)?,
+        )
     };
-    let token = keys::github_token();
     update::check(
         &UreqGetHttp,
         &feed,

@@ -52,13 +52,20 @@ impl FileKind {
             .and_then(|e| e.to_str())
             .unwrap_or("")
             .to_lowercase();
-        // DOCX is a zip, but so is a lot else, so the extension decides.
-        if bytes.starts_with(b"PK\x03\x04") {
-            return match extension.as_str() {
-                "docx" => Ok(Self::Docx),
-                _ => Err(CoreError::Invalid(
+        // Android document providers often return a content URI without the
+        // original filename. Inspect the archive instead of relying only on
+        // the extension so a picked DOCX is still recognized.
+        if bytes.starts_with(b"PK") {
+            let is_docx = zip::ZipArchive::new(std::io::Cursor::new(bytes))
+                .ok()
+                .map(|mut archive| archive.by_name("word/document.xml").is_ok())
+                .unwrap_or(false);
+            return if is_docx {
+                Ok(Self::Docx)
+            } else {
+                Err(CoreError::Invalid(
                     "that looks like a zip archive — use a PDF, DOCX or text file".into(),
-                )),
+                ))
             };
         }
         match extension.as_str() {

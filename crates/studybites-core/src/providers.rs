@@ -278,9 +278,9 @@ impl<'a> Provider<'a> {
     /// kind of identifier that does not rot.
     pub fn default_model(id: ProviderId) -> &'static str {
         match id {
-            ProviderId::Gemini => "gemini-flash-latest",
-            ProviderId::Groq => "",
-            ProviderId::OpenRouter => "",
+            ProviderId::Gemini => "gemini-3.5-flash-lite",
+            ProviderId::Groq => "openai/gpt-oss-20b",
+            ProviderId::OpenRouter => "google/gemma-4-26b-a4b-it:free",
         }
     }
 

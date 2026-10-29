@@ -1,0 +1,86 @@
+name: Build Android app
+
+# Build the mobile companion alongside the Windows installer whenever main
+# changes. The Android project is generated from the Tauri source so it never
+# drifts from the shared Rust and React implementation.
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - ".gitignore"
+      - ".devcontainer/**"
+  workflow_dispatch:
+
+concurrency:
+  group: build-android-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android build tools
+        run: |
+          sdkmanager "platform-tools" "platforms;android-36" \
+            "build-tools;36.0.0" "ndk;27.0.12077973"
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: . -> target
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Generate the Android project
+        run: npx tauri android init --ci --skip-targets-install
+
+      - name: Use the desktop icon for Android
+        run: npx tauri icon src-tauri/icons/icon.png
+
+      - name: Build signed debug APK for device testing
+        env:
+          STUDYBITES_LICENSE_PUBKEY: ${{ secrets.STUDYBITES_LICENSE_PUBKEY }}
+          GRADLE_OPTS: "-Xmx3g -Dorg.gradle.workers.max=2"
+          CARGO_BUILD_JOBS: "2"
+        run: npx tauri android build --ci --target aarch64 --debug --apk
+
+      - name: Upload signed Android APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: StudyBites-android-debug
+          path: src-tauri/gen/android/**/build/outputs/apk/**/*.apk
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Publish signed Android APK
+        if: ${{ startsWith(github.ref, 'refs/tags/') }}
+        uses: softprops/action-gh-release@v2
+        with:
+          name: StudyBites ${{ github.ref_name }}
+          generate_release_notes: true
+          files: src-tauri/gen/android/**/build/outputs/apk/**/*.apk
+          fail_on_unmatched_files: true

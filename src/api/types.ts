@@ -286,6 +286,7 @@ export interface ProviderInfo {
   configured: boolean;
   helpUrl: string;
   defaultModel: string;
+  selectedModel: string;
 }
 
 export interface ExplainResult {

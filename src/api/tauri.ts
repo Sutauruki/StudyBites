@@ -63,9 +63,22 @@ export const tauriBackend: Backend = {
 
   // ---- Phase 2 ----------------------------------------------------------
 
-  materialUpload: (subjectId, topicId, path) =>
-    invoke("material_upload", { subjectId, topicId, path }),
-  filePreviewText: (path) => invoke("file_preview_text", { path }),
+  materialUpload: async (subjectId, topicId, path) => {
+    if (!path.startsWith("content://")) {
+      return invoke("material_upload", { subjectId, topicId, path });
+    }
+    const filename = pickedFilename(path);
+    return invoke("material_upload_uri", { subjectId, topicId, uri: path, filename });
+  },
+  filePreviewText: async (path) => {
+    if (!path.startsWith("content://")) {
+      return invoke("file_preview_text", { path });
+    }
+    return invoke<string>("file_preview_text_uri", {
+      uri: path,
+      filename: pickedFilename(path),
+    });
+  },
   materialsList: (subjectId) => invoke("materials_list", { subjectId }),
   materialSetTopic: (id, topicId) =>
     invoke("material_set_topic", { id, topicId }),
@@ -121,3 +134,14 @@ export const tauriBackend: Backend = {
     await openUrl(url);
   },
 };
+
+function pickedFilename(path: string): string {
+  const encodedName = path.split("/").pop() || "upload";
+  let filename = "upload";
+  try {
+    filename = decodeURIComponent(encodedName) || filename;
+  } catch {
+    filename = encodedName || filename;
+  }
+  return filename.split("?")[0] || "upload";
+}

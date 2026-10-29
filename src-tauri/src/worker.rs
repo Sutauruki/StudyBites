@@ -97,19 +97,35 @@ fn drain(app: &AppHandle) {
         let http = UreqHttp;
         let providers: Vec<Provider<'_>> = {
             let Ok(db) = state.db.lock() else { break };
-            ProviderId::default_order()
-                .into_iter()
-                .filter_map(|id| {
-                    let key = keys::provider_key(id)?;
-                    let chosen = db
-                        .setting(&format!("ai.model.{}", id.as_str()))
-                        .ok()
-                        .flatten()
-                        .unwrap_or_default();
-                    let provider = Provider::new(id, key, &http).with_model(chosen);
-                    (!provider.model.trim().is_empty()).then_some(provider)
-                })
-                .collect()
+            let mut list = Vec::new();
+            for id in ProviderId::default_order() {
+                let key = match keys::provider_key(&db, id) {
+                    Ok(Some(key)) => key,
+                    Ok(None) => continue,
+                    Err(error) => {
+                        eprintln!(
+                            "StudyBites could not read the {} API key: {error}",
+                            id.as_str()
+                        );
+                        return;
+                    }
+                };
+                let chosen = match db.setting(&format!("ai.model.{}", id.as_str())) {
+                    Ok(model) => model.unwrap_or_default(),
+                    Err(error) => {
+                        eprintln!(
+                            "StudyBites could not read the {} model setting: {error}",
+                            id.as_str()
+                        );
+                        return;
+                    }
+                };
+                let provider = Provider::new(id, key, &http).with_model(chosen);
+                if !provider.model.trim().is_empty() {
+                    list.push(provider);
+                }
+            }
+            list
         };
 
         if providers.is_empty() {

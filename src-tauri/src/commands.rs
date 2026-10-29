@@ -43,9 +43,15 @@ pub fn eula_text(app: tauri::AppHandle) -> Ipc<String> {
     use tauri::Manager;
     let path = app
         .path()
-        .resolve("EULA.md", tauri::path::BaseDirectory::Resource)
-        .map_err(|e| format!("the agreement could not be located: {e}"))?;
-    std::fs::read_to_string(path).map_err(|e| format!("the agreement could not be read: {e}"))
+        .resolve("EULA.md", tauri::path::BaseDirectory::Resource);
+    match path {
+        Ok(path) => match std::fs::read_to_string(path) {
+            Ok(text) if !text.trim().is_empty() => Ok(text),
+            Ok(_) => Err("the agreement is empty".to_string()),
+            Err(_) => Ok(include_str!("../resources/EULA.md").to_string()),
+        },
+        Err(_) => Ok(include_str!("../resources/EULA.md").to_string()),
+    }
 }
 
 #[tauri::command]
@@ -160,10 +166,16 @@ pub fn topic_nudge(state: State<AppState>, id: i64, delta: i64) -> Ipc<Vec<Topic
 
 #[tauri::command]
 pub fn setting_get(state: State<AppState>, key: String) -> Ipc<Option<String>> {
+    if key.starts_with("__secret.") {
+        return Err("secret settings are not available through the general settings API".into());
+    }
     lock(&state)?.setting(&key).map_err(to_ipc)
 }
 
 #[tauri::command]
 pub fn setting_set(state: State<AppState>, key: String, value: String) -> Ipc<()> {
+    if key.starts_with("__secret.") {
+        return Err("secret settings must be updated through the secure settings API".into());
+    }
     lock(&state)?.set_setting(&key, &value).map_err(to_ipc)
 }

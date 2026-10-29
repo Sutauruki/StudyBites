@@ -3,6 +3,7 @@
 use studybites_core::ai::{self, AiError, GeneratedCard, ProviderId};
 use studybites_core::chunk::{chunk_text, estimate_tokens, MAX_TOKENS};
 use studybites_core::db::DEV_KEY;
+use studybites_core::providers::Provider;
 use studybites_core::{jobs, quota, Db, JobStatus};
 
 fn db() -> Db {
@@ -216,6 +217,22 @@ fn provider_ids_round_trip() {
     assert_eq!(ProviderId::parse(" GEMINI "), Some(ProviderId::Gemini));
     assert_eq!(ProviderId::parse("chatgpt"), None);
     assert_eq!(ProviderId::default_order()[0], ProviderId::Gemini);
+}
+
+#[test]
+fn providers_have_recommended_models_by_default() {
+    assert_eq!(
+        Provider::default_model(ProviderId::Gemini),
+        "gemini-3.5-flash-lite"
+    );
+    assert_eq!(
+        Provider::default_model(ProviderId::Groq),
+        "openai/gpt-oss-20b"
+    );
+    assert_eq!(
+        Provider::default_model(ProviderId::OpenRouter),
+        "google/gemma-4-26b-a4b-it:free"
+    );
 }
 
 // ---- job queue ----------------------------------------------------------

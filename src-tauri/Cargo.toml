@@ -26,3 +26,4 @@ tauri-plugin-opener = "2"
 keyring = { version = "3", features = ["windows-native", "apple-native", "sync-secret-service"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
+tauri-plugin-fs = "2"
