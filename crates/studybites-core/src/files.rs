@@ -239,6 +239,9 @@ pub fn extract(path: &Path) -> Result<Extracted> {
 
 /// Compression level: 9 trades a little CPU at upload time for a smaller
 /// folder, and these files are written once and almost never read.
+#[cfg(target_os = "android")]
+const ZSTD_LEVEL: i32 = 1;
+#[cfg(not(target_os = "android"))]
 const ZSTD_LEVEL: i32 = 9;
 
 /// Format markers. `SBC1` is compressed only — written by builds before

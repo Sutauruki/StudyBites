@@ -261,6 +261,7 @@ pub fn material_delete(state: State<AppState>, id: i64) -> Ipc<()> {
 /// Decompress and save the original file (Brief 3.10).
 #[tauri::command]
 pub async fn material_save_original(
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
     id: i64,
     destination: String,
@@ -275,7 +276,22 @@ pub async fn material_save_original(
         .ok_or("the original file was not kept for this upload")?;
 
     let bytes = files::cold_read(&app_data, &state.file_key(), &cold).map_err(to_ipc)?;
-    std::fs::write(&destination, bytes).map_err(|e| format!("could not save the file: {e}"))?;
+    if destination.starts_with("content://") {
+        use std::io::Write;
+        use tauri_plugin_fs::{FsExt, OpenOptions};
+        let destination = tauri::Url::parse(&destination)
+            .map_err(|e| format!("invalid save destination: {e}"))?;
+        let mut options = OpenOptions::new();
+        options.read(false).write(true).truncate(true);
+        let mut file = app
+            .fs()
+            .open(destination, options)
+            .map_err(|e| format!("could not open the save destination: {e}"))?;
+        file.write_all(&bytes)
+            .map_err(|e| format!("could not save the file: {e}"))?;
+    } else {
+        std::fs::write(&destination, bytes).map_err(|e| format!("could not save the file: {e}"))?;
+    }
     Ok(destination)
 }
 

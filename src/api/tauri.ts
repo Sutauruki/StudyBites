@@ -136,12 +136,15 @@ export const tauriBackend: Backend = {
 };
 
 function pickedFilename(path: string): string {
-  const encodedName = path.split("/").pop() || "upload";
+  const documentPath = path.match(/\/document\/(.+)$/)?.[1];
+  const encodedName = documentPath ?? path.split("/").pop() ?? "upload";
   let filename = "upload";
   try {
     filename = decodeURIComponent(encodedName) || filename;
   } catch {
     filename = encodedName || filename;
   }
-  return filename.split("?")[0] || "upload";
+  filename = filename.split("?")[0] || "upload";
+  const slash = filename.lastIndexOf("/");
+  return (slash >= 0 ? filename.slice(slash + 1) : filename) || "upload";
 }
