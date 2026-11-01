@@ -37,7 +37,10 @@ jobs:
           node-version: 20
           cache: npm
 
-      - uses: android-actions/setup-android@v3
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: "platform-tools"
 
       - name: Install Android build tools
         run: |
