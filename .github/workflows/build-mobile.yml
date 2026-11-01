@@ -44,6 +44,17 @@ jobs:
           sdkmanager "platform-tools" "platforms;android-36" \
             "build-tools;36.0.0" "ndk;27.0.12077973"
 
+      - name: Configure Android binutils compatibility
+        run: |
+          mkdir -p "$RUNNER_TEMP/android-binutils"
+          cat > "$RUNNER_TEMP/android-binutils/aarch64-linux-android-ranlib" <<'EOF'
+          #!/usr/bin/env bash
+          exec llvm-ar s "$@"
+          EOF
+          chmod +x "$RUNNER_TEMP/android-binutils/aarch64-linux-android-ranlib"
+          echo "$RUNNER_TEMP/android-binutils" >> "$GITHUB_PATH"
+          echo "AARCH64_LINUX_ANDROID_RANLIB=$RUNNER_TEMP/android-binutils/aarch64-linux-android-ranlib" >> "$GITHUB_ENV"
+
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android

@@ -1161,7 +1161,24 @@ kbd {
     min-height: calc(100dvh - 72px);
     padding: max(20px, env(safe-area-inset-top)) 16px
       calc(28px + env(safe-area-inset-bottom));
-    gap: 24px;
+    gap: 16px;
+  }
+
+  .lede {
+    padding-top: 0;
+    gap: 16px;
+  }
+
+  .page-head.lede {
+    gap: 8px;
+  }
+
+  .content > section {
+    gap: 12px;
+  }
+
+  .tile {
+    padding: 20px 8px;
   }
 
   .gate {
@@ -1213,8 +1230,8 @@ kbd {
 
   .sidebar__brand,
   .sidebar__label,
-  .sidebar__subjects,
   .dev-badge { display: none; }
+  .sidebar__subjects { display: none !important; }
 
   .sidebar__group,
   .sidebar__foot { display: contents; }

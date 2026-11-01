@@ -146,5 +146,8 @@ function pickedFilename(path: string): string {
   }
   filename = filename.split("?")[0] || "upload";
   const slash = filename.lastIndexOf("/");
-  return (slash >= 0 ? filename.slice(slash + 1) : filename) || "upload";
+  filename = (slash >= 0 ? filename.slice(slash + 1) : filename) || "upload";
+  // Some Android providers expose only an opaque ID such as document:77062.
+  // Never persist that implementation detail as the student's filename.
+  return /^document:\w+$/i.test(filename) ? "uploaded-material" : filename;
 }
