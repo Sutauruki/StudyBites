@@ -46,6 +46,7 @@ pub struct AppState {
     pub db: Mutex<Db>,
     /// Cold-storage key. `None` until unlocked.
     pub file_key: Mutex<Option<SecretKey>>,
+    pub db_key: Mutex<SecretKey>,
     pub app_data: std::path::PathBuf,
     pub profile: DeviceProfile,
     pub status: Mutex<Status>,
@@ -109,6 +110,11 @@ impl AppState {
             // false, and it never touches the disk.
             db: Mutex::new(Db::open_in_memory(studybites_core::db::DEV_KEY)?),
             file_key: Mutex::new(None),
+            db_key: Mutex::new(
+                crypto::derive(&[0u8; 32], b"studybites-development")
+                    .db
+                    .clone(),
+            ),
             status: Mutex::new(Status {
                 licensing_enabled: license::licensing_enabled(),
                 unlocked: false,
@@ -141,7 +147,7 @@ impl AppState {
             self.app_data.join("studybites.db"),
             studybites_core::db::DEV_KEY,
         )?;
-        self.finish_unlock(db, None, None)
+        self.finish_unlock(db, None, None, None)
     }
 
     /// Verify a code, bind it to this machine, derive the keys and open up.
@@ -171,7 +177,12 @@ impl AppState {
 
         let db = Db::open_or_rekey(self.app_data.join("studybites.db"), Key::Raw(&keys.db))?;
         let buyer = license.buyer_name.clone();
-        self.finish_unlock(db, Some(keys.file.clone()), Some(buyer))
+        self.finish_unlock(
+            db,
+            Some(keys.db.clone()),
+            Some(keys.file.clone()),
+            Some(buyer),
+        )
     }
 
     /// Store a newly accepted code, then unlock with it.
@@ -191,6 +202,7 @@ impl AppState {
     fn finish_unlock(
         &self,
         db: Db,
+        db_key: Option<SecretKey>,
         file_key: Option<SecretKey>,
         buyer: Option<String>,
     ) -> Result<(), CoreError> {
@@ -216,6 +228,11 @@ impl AppState {
         }
         if let Ok(mut slot) = self.file_key.lock() {
             *slot = file_key;
+        }
+        if let Some(db_key) = db_key {
+            if let Ok(mut slot) = self.db_key.lock() {
+                *slot = db_key;
+            }
         }
         if let Ok(mut status) = self.status.lock() {
             status.unlocked = true;

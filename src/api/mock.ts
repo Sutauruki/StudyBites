@@ -642,30 +642,37 @@ export const mockBackend: Backend = {
         label: "Google Gemini",
         configured: false,
         helpUrl: "https://aistudio.google.com/apikey",
-        defaultModel: "gemini-2.0-flash",
+        defaultModel: "gemini-3.5-flash-lite",
+        selectedModel: "gemini-3.5-flash-lite",
       },
       {
         id: "groq",
         label: "Groq",
         configured: false,
         helpUrl: "https://console.groq.com/keys",
-        defaultModel: "llama-3.3-70b-versatile",
+        defaultModel: "openai/gpt-oss-20b",
+        selectedModel: "openai/gpt-oss-20b",
       },
       {
         id: "openrouter",
         label: "OpenRouter",
         configured: false,
         helpUrl: "https://openrouter.ai/keys",
-        defaultModel: "meta-llama/llama-3.3-70b-instruct:free",
+        defaultModel: "google/gemma-4-26b-a4b-it:free",
+        selectedModel: "google/gemma-4-26b-a4b-it:free",
       },
     ]),
   providerKeySet: () =>
-    Promise.reject("Keys are stored in the OS keychain, which the browser preview has no access to."),
+    Promise.reject(
+      "Keys are stored in secure device storage, which the browser preview has no access to.",
+    ),
   providerModels: () =>
     Promise.reject("Listing models needs the desktop app — this is the browser preview."),
   providerModelSet: () => tick(undefined),
   githubTokenSet: () =>
-    Promise.reject("Keys are stored in the OS keychain, which the browser preview has no access to."),
+    Promise.reject(
+      "Keys are stored in secure device storage, which the browser preview has no access to.",
+    ),
   githubTokenPresent: () => tick(false),
   updateCheck: () =>
     tick<UpdateStatus>({
@@ -742,4 +749,3 @@ function seedCards(rows: Rows, subjectId: number | null): Rows {
   write(rows);
   return rows;
 }
-

@@ -1,0 +1,122 @@
+name: Build Android app
+
+# Build the mobile companion alongside the Windows installer whenever main
+# changes. The Android project is generated from the Tauri source so it never
+# drifts from the shared Rust and React implementation.
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - ".gitignore"
+      - ".devcontainer/**"
+  workflow_dispatch:
+
+concurrency:
+  group: build-android-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android build tools
+        run: |
+          sdkmanager "platform-tools" "platforms;android-36" \
+            "build-tools;36.0.0" "ndk;27.0.12077973"
+
+      - name: Configure Android binutils compatibility
+        run: |
+          NDK_BIN="$ANDROID_HOME/ndk/27.0.12077973/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          mkdir -p "$RUNNER_TEMP/android-binutils"
+          cat > "$RUNNER_TEMP/android-binutils/aarch64-linux-android-ranlib" <<'EOF'
+          #!/usr/bin/env bash
+          exec llvm-ar s "$@"
+          EOF
+          chmod +x "$RUNNER_TEMP/android-binutils/aarch64-linux-android-ranlib"
+          echo "$RUNNER_TEMP/android-binutils" >> "$GITHUB_PATH"
+          echo "$NDK_BIN" >> "$GITHUB_PATH"
+          echo "AARCH64_LINUX_ANDROID_RANLIB=$RUNNER_TEMP/android-binutils/aarch64-linux-android-ranlib" >> "$GITHUB_ENV"
+          echo "CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$NDK_BIN/aarch64-linux-android24-clang" >> "$GITHUB_ENV"
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: . -> target
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Set release version from tag
+        run: node scripts/set-release-version.mjs
+
+      - name: Generate the Android project
+        run: npx tauri android init --ci --skip-targets-install
+
+      - name: Use the desktop icon for Android
+        run: npx tauri icon src-tauri/icons/icon.png
+
+      - name: Configure production Android signing
+        if: ${{ startsWith(github.ref, 'refs/tags/') }}
+        env:
+          ANDROID_KEY_BASE64: ${{ secrets.ANDROID_KEY_BASE64 }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          test -n "$ANDROID_KEY_BASE64"
+          test -n "$ANDROID_KEY_ALIAS"
+          test -n "$ANDROID_KEY_PASSWORD"
+          echo "$ANDROID_KEY_BASE64" | base64 --decode > "$RUNNER_TEMP/studybites-release.jks"
+          ANDROID_KEYSTORE_PATH="$RUNNER_TEMP/studybites-release.jks" \
+            ANDROID_KEY_ALIAS="$ANDROID_KEY_ALIAS" \
+            ANDROID_KEY_PASSWORD="$ANDROID_KEY_PASSWORD" \
+            node scripts/configure-android-signing.mjs
+
+      - name: Build release APK
+        env:
+          STUDYBITES_LICENSE_PUBKEY: ${{ secrets.STUDYBITES_LICENSE_PUBKEY }}
+          GRADLE_OPTS: "-Xmx2g -Dorg.gradle.workers.max=1"
+          CARGO_BUILD_JOBS: "1"
+          CARGO_INCREMENTAL: "0"
+          CARGO_PROFILE_RELEASE_LTO: "off"
+          CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "1"
+        run: npx tauri android build --ci --target aarch64 --apk
+
+      - name: Upload Android APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: StudyBites-android-release
+          path: src-tauri/gen/android/**/build/outputs/apk/**/*.apk
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Publish Android APK
+        if: ${{ startsWith(github.ref, 'refs/tags/') }}
+        uses: softprops/action-gh-release@v2
+        with:
+          name: StudyBites ${{ github.ref_name }}
+          generate_release_notes: true
+          files: src-tauri/gen/android/**/build/outputs/apk/**/*.apk
+          fail_on_unmatched_files: true

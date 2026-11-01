@@ -40,6 +40,23 @@ That publishes a normal GitHub Release with the installer attached.
 If no build has run yet, start one by hand from
 **Actions → "Build Windows installer" → Run workflow**.
 
+### Upgrades and existing data
+
+The Windows installer keeps the stable application identity
+`com.sutauruki.studybites`, installs per user, and stores the database,
+original files, settings, and licensing data in the platform app-data
+directory rather than beside the executable. Running a newer installer over
+the existing installation updates the program files without deleting that
+data. Versioned releases must use increasing `vMAJOR.MINOR.PATCH` tags.
+
+Android updates require the same application ID and the same production
+keystore. Release-tag builds use the `ANDROID_KEY_BASE64`,
+`ANDROID_KEY_ALIAS`, and `ANDROID_KEY_PASSWORD` GitHub secrets; these must
+remain unchanged for the lifetime of the app. Install the new APK over the
+old one rather than uninstalling first, because uninstalling Android removes
+app data. The Android workflow intentionally fails a tagged release when
+those signing secrets are missing.
+
 ---
 
 ## Working on the code (Codespaces or any Linux box)

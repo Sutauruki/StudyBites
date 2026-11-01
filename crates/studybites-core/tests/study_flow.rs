@@ -226,6 +226,35 @@ fn file_type_comes_from_content_before_extension() {
 }
 
 #[test]
+fn docx_extraction_works_without_a_filename_extension() {
+    use std::io::Write;
+
+    let mut bytes = std::io::Cursor::new(Vec::new());
+    {
+        let mut archive = zip::ZipWriter::new(&mut bytes);
+        archive
+            .start_file(
+                "word/document.xml",
+                zip::write::FileOptions::<()>::default(),
+            )
+            .unwrap();
+        write!(
+            archive,
+            r#"<w:document><w:body><w:p><w:r><w:t>Algebra &amp; functions</w:t></w:r></w:p><w:p><w:r><w:t>Second topic</w:t></w:r></w:p></w:body></w:document>"#
+        )
+        .unwrap();
+        archive.finish().unwrap();
+    }
+
+    let extracted =
+        files::extract_from_bytes(std::path::Path::new("picked-document"), &bytes.into_inner())
+            .unwrap();
+    assert_eq!(extracted.kind, files::FileKind::Docx);
+    assert!(extracted.text.contains("Algebra & functions"));
+    assert!(extracted.text.contains("Second topic"));
+}
+
+#[test]
 fn cold_storage_round_trips_and_refuses_path_traversal() {
     let dir = tempfile::tempdir().unwrap();
     let original = b"the original lecture notes, byte for byte";

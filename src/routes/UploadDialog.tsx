@@ -96,7 +96,11 @@ export function UploadDialog({
         chosen = created.id;
       }
 
-      const accepted = await backend.materialUpload(subjectId, chosen, path);
+      const accepted = await withTimeout(
+        backend.materialUpload(subjectId, chosen, path),
+        120_000,
+        "The upload took too long. Check that the file is under 64 MB and try again.",
+      );
       if (accepted.duplicateOf !== null) {
         onUploaded("You have already uploaded that file, so nothing was re-processed.");
       } else {
@@ -111,6 +115,22 @@ export function UploadDialog({
       setBusy(false);
     }
   };
+
+  function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const timer = window.setTimeout(() => reject(new Error(message)), timeoutMs);
+      promise.then(
+        (value) => {
+          window.clearTimeout(timer);
+          resolve(value);
+        },
+        (error) => {
+          window.clearTimeout(timer);
+          reject(error);
+        },
+      );
+    });
+  }
 
   const filename = path?.split(/[\\/]/).pop() ?? "";
   const suggestedLabel =

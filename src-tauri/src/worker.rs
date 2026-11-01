@@ -58,9 +58,37 @@ pub fn spawn(app: AppHandle, signal: Arc<Signal>) {
 
     std::thread::Builder::new()
         .name("studybites-ingest".into())
-        .spawn(move || loop {
-            signal.wait();
-            drain(&app);
+        .spawn(move || {
+            let Some(state) = app.try_state::<AppState>() else {
+                return;
+            };
+            loop {
+                signal.wait();
+                if !state.is_unlocked() {
+                    continue;
+                }
+                let db_result = if state.status().licensing_enabled {
+                    let db_key = state
+                        .db_key
+                        .lock()
+                        .map(|key| key.clone())
+                        .unwrap_or_else(|poisoned| poisoned.into_inner().clone());
+                    studybites_core::Db::open(
+                        state.app_data.join("studybites.db"),
+                        studybites_core::db::Key::Raw(&db_key),
+                    )
+                } else {
+                    studybites_core::Db::open(
+                        state.app_data.join("studybites.db"),
+                        studybites_core::db::DEV_KEY,
+                    )
+                };
+                let Ok(mut db) = db_result else {
+                    eprintln!("StudyBites could not open the ingestion worker database");
+                    continue;
+                };
+                drain(&app, &mut db);
+            }
         })
         .expect("the ingestion worker could not be started");
 }
@@ -80,7 +108,7 @@ fn report(app: &AppHandle) {
 }
 
 /// Work through the queue until it is empty, paused, or has nothing runnable.
-fn drain(app: &AppHandle) {
+fn drain(app: &AppHandle, db: &mut studybites_core::Db) {
     let embedder = LexicalEmbedder;
     let Some(state) = app.try_state::<AppState>() else {
         return;
@@ -96,20 +124,35 @@ fn drain(app: &AppHandle) {
         // in Settings takes effect without a restart.
         let http = UreqHttp;
         let providers: Vec<Provider<'_>> = {
-            let Ok(db) = state.db.lock() else { break };
-            ProviderId::default_order()
-                .into_iter()
-                .filter_map(|id| {
-                    let key = keys::provider_key(id)?;
-                    let chosen = db
-                        .setting(&format!("ai.model.{}", id.as_str()))
-                        .ok()
-                        .flatten()
-                        .unwrap_or_default();
-                    let provider = Provider::new(id, key, &http).with_model(chosen);
-                    (!provider.model.trim().is_empty()).then_some(provider)
-                })
-                .collect()
+            let mut list = Vec::new();
+            for id in ProviderId::default_order() {
+                let key = match keys::provider_key(db, id) {
+                    Ok(Some(key)) => key,
+                    Ok(None) => continue,
+                    Err(error) => {
+                        eprintln!(
+                            "StudyBites could not read the {} API key: {error}",
+                            id.as_str()
+                        );
+                        return;
+                    }
+                };
+                let chosen = match db.setting(&format!("ai.model.{}", id.as_str())) {
+                    Ok(model) => model.unwrap_or_default(),
+                    Err(error) => {
+                        eprintln!(
+                            "StudyBites could not read the {} model setting: {error}",
+                            id.as_str()
+                        );
+                        return;
+                    }
+                };
+                let provider = Provider::new(id, key, &http).with_model(chosen);
+                if !provider.model.trim().is_empty() {
+                    list.push(provider);
+                }
+            }
+            list
         };
 
         if providers.is_empty() {
@@ -117,12 +160,7 @@ fn drain(app: &AppHandle) {
             break;
         }
 
-        let outcome = {
-            let Ok(mut db) = state.db.lock() else {
-                break;
-            };
-            ingest::process_one(&mut db, &providers, &embedder)
-        };
+        let outcome = ingest::process_one(db, &providers, &embedder);
 
         match outcome {
             Ok(ingest::Processed::Idle) => break,

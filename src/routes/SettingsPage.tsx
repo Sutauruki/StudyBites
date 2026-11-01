@@ -33,18 +33,20 @@ export function SettingsPage({
   const [queue, setQueue] = useState<QueueStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (): Promise<ProviderInfo[]> => {
     try {
       const [list, status] = await Promise.all([backend.providersList(), backend.queueStatus()]);
       setProviders(list);
       setQueue(status);
+      return list;
     } catch (err) {
       setError(errorText(err));
+      throw err;
     }
   }, []);
 
   useEffect(() => {
-    void refresh();
+    void refresh().catch(() => {});
   }, [refresh]);
 
   return (
@@ -79,9 +81,8 @@ export function SettingsPage({
       <section className="stack">
         <span className="label">AI keys</span>
         <p className="muted">
-          StudyBites uses your own free API key, stored in Windows&rsquo; own credential store —
-          never in the app&rsquo;s database, and never sent anywhere except the provider you
-          choose. Gemini is tried first, then the others if it runs out for the day.
+          StudyBites uses your own API key, stored securely on this device and sent only to the
+          provider you choose. Gemini is tried first, then the others if it runs out for the day.
         </p>
         <div className="card list">
           {providers.map((provider) => (
@@ -125,7 +126,7 @@ export function SettingsPage({
             reporting. Material is sent only to the AI provider you configure, using your key.
           </p>
           <p className="muted">
-            Storage: {isDesktop ? "encrypted database on this device" : "browser mock data"}
+            Storage: {isDesktop ? "secure storage on this device" : "browser mock data"}
           </p>
         </div>
       </section>
@@ -139,7 +140,7 @@ function KeyRow({
   onError,
 }: {
   provider: ProviderInfo;
-  onSaved: () => void;
+  onSaved: () => Promise<ProviderInfo[]>;
   onError: (message: string) => void;
 }) {
   const [value, setValue] = useState("");
@@ -147,14 +148,22 @@ function KeyRow({
   const [saved, setSaved] = useState(false);
   const [models, setModels] = useState<string[] | null>(null);
   const [loadingModels, setLoadingModels] = useState(false);
+  const [selectedModel, setSelectedModel] = useState(provider.selectedModel);
+
+  useEffect(() => {
+    setSelectedModel(provider.selectedModel);
+  }, [provider.selectedModel]);
 
   const save = async () => {
     setBusy(true);
     try {
       await backend.providerKeySet(provider.id, value);
+      const refreshed = await onSaved();
+      if (!refreshed.some((item) => item.id === provider.id && item.configured)) {
+        throw new Error("The key did not appear in the saved provider list. Please try again.");
+      }
       setValue("");
       setSaved(true);
-      onSaved();
       window.setTimeout(() => setSaved(false), 2500);
     } catch (err) {
       onError(errorText(err));
@@ -176,7 +185,7 @@ function KeyRow({
 
       <div className="key-row__meta">
         {provider.defaultModel ? (
-          <span>Model: {provider.defaultModel}</span>
+          <span>Recommended: {provider.defaultModel}</span>
         ) : (
           <span>No model chosen yet</span>
         )}
@@ -204,25 +213,39 @@ function KeyRow({
               }
             }}
           >
-            {loadingModels ? "Loading models…" : "Choose model"}
+            {loadingModels ? "Loading models…" : "Change model"}
           </button>
         ) : (
           <select
             className="input"
-            value={provider.defaultModel}
+            value={selectedModel}
             onChange={async (e) => {
+              const nextModel = e.target.value;
+              setSelectedModel(nextModel);
               try {
-                await backend.providerModelSet(provider.id, e.target.value);
-                onSaved();
+                await backend.providerModelSet(provider.id, nextModel);
+                const refreshed = await onSaved();
+                const updated = refreshed.find((item) => item.id === provider.id);
+                if (!updated || updated.selectedModel !== nextModel) {
+                  throw new Error("The selected model was not confirmed as saved.");
+                }
               } catch (err) {
+                setSelectedModel(provider.selectedModel);
                 onError(errorText(err));
               }
             }}
           >
-            <option value="">Choose a model…</option>
+            {!models.includes(provider.defaultModel) && (
+              <option value={provider.defaultModel}>
+                {provider.defaultModel} (recommended)
+              </option>
+            )}
+            {selectedModel !== provider.defaultModel && !models.includes(selectedModel) && (
+              <option value={selectedModel}>{selectedModel} (currently selected)</option>
+            )}
             {models.map((model) => (
               <option key={model} value={model}>
-                {model}
+                {model}{model === provider.defaultModel ? " (recommended)" : ""}
               </option>
             ))}
           </select>
@@ -250,7 +273,7 @@ function KeyRow({
             onClick={async () => {
               try {
                 await backend.providerKeySet(provider.id, "");
-                onSaved();
+                await onSaved();
               } catch (err) {
                 onError(errorText(err));
               }
@@ -307,8 +330,7 @@ function UpdateSection() {
           </p>
           <p className="muted">
             Because the project repository is private, checking needs a GitHub token with read
-            access. Like the AI keys, it is kept in Windows&rsquo; credential store, never inside
-            the app.
+            access. Like the AI keys, it is kept in this device&rsquo;s secure storage.
           </p>
 
           <div className="key-row__controls">

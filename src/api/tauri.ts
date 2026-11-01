@@ -63,9 +63,22 @@ export const tauriBackend: Backend = {
 
   // ---- Phase 2 ----------------------------------------------------------
 
-  materialUpload: (subjectId, topicId, path) =>
-    invoke("material_upload", { subjectId, topicId, path }),
-  filePreviewText: (path) => invoke("file_preview_text", { path }),
+  materialUpload: async (subjectId, topicId, path) => {
+    if (!path.startsWith("content://")) {
+      return invoke("material_upload", { subjectId, topicId, path });
+    }
+    const filename = pickedFilename(path);
+    return invoke("material_upload_uri", { subjectId, topicId, uri: path, filename });
+  },
+  filePreviewText: async (path) => {
+    if (!path.startsWith("content://")) {
+      return invoke("file_preview_text", { path });
+    }
+    return invoke<string>("file_preview_text_uri", {
+      uri: path,
+      filename: pickedFilename(path),
+    });
+  },
   materialsList: (subjectId) => invoke("materials_list", { subjectId }),
   materialSetTopic: (id, topicId) =>
     invoke("material_set_topic", { id, topicId }),
@@ -121,3 +134,20 @@ export const tauriBackend: Backend = {
     await openUrl(url);
   },
 };
+
+function pickedFilename(path: string): string {
+  const documentPath = path.match(/\/document\/(.+)$/)?.[1];
+  const encodedName = documentPath ?? path.split("/").pop() ?? "upload";
+  let filename = "upload";
+  try {
+    filename = decodeURIComponent(encodedName) || filename;
+  } catch {
+    filename = encodedName || filename;
+  }
+  filename = filename.split("?")[0] || "upload";
+  const slash = filename.lastIndexOf("/");
+  filename = (slash >= 0 ? filename.slice(slash + 1) : filename) || "upload";
+  // Some Android providers expose only an opaque ID such as document:77062.
+  // Never persist that implementation detail as the student's filename.
+  return /^document:\w+$/i.test(filename) ? "uploaded-material" : filename;
+}
