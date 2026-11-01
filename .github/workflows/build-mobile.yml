@@ -46,6 +46,7 @@ jobs:
 
       - name: Configure Android binutils compatibility
         run: |
+          NDK_BIN="$ANDROID_HOME/ndk/27.0.12077973/toolchains/llvm/prebuilt/linux-x86_64/bin"
           mkdir -p "$RUNNER_TEMP/android-binutils"
           cat > "$RUNNER_TEMP/android-binutils/aarch64-linux-android-ranlib" <<'EOF'
           #!/usr/bin/env bash
@@ -53,7 +54,9 @@ jobs:
           EOF
           chmod +x "$RUNNER_TEMP/android-binutils/aarch64-linux-android-ranlib"
           echo "$RUNNER_TEMP/android-binutils" >> "$GITHUB_PATH"
+          echo "$NDK_BIN" >> "$GITHUB_PATH"
           echo "AARCH64_LINUX_ANDROID_RANLIB=$RUNNER_TEMP/android-binutils/aarch64-linux-android-ranlib" >> "$GITHUB_ENV"
+          echo "CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$NDK_BIN/aarch64-linux-android24-clang" >> "$GITHUB_ENV"
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -66,28 +69,50 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Set release version from tag
+        run: node scripts/set-release-version.mjs
+
       - name: Generate the Android project
         run: npx tauri android init --ci --skip-targets-install
 
       - name: Use the desktop icon for Android
         run: npx tauri icon src-tauri/icons/icon.png
 
-      - name: Build signed debug APK for device testing
+      - name: Configure production Android signing
+        if: ${{ startsWith(github.ref, 'refs/tags/') }}
+        env:
+          ANDROID_KEY_BASE64: ${{ secrets.ANDROID_KEY_BASE64 }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          test -n "$ANDROID_KEY_BASE64"
+          test -n "$ANDROID_KEY_ALIAS"
+          test -n "$ANDROID_KEY_PASSWORD"
+          echo "$ANDROID_KEY_BASE64" | base64 --decode > "$RUNNER_TEMP/studybites-release.jks"
+          ANDROID_KEYSTORE_PATH="$RUNNER_TEMP/studybites-release.jks" \
+            ANDROID_KEY_ALIAS="$ANDROID_KEY_ALIAS" \
+            ANDROID_KEY_PASSWORD="$ANDROID_KEY_PASSWORD" \
+            node scripts/configure-android-signing.mjs
+
+      - name: Build release APK
         env:
           STUDYBITES_LICENSE_PUBKEY: ${{ secrets.STUDYBITES_LICENSE_PUBKEY }}
-          GRADLE_OPTS: "-Xmx3g -Dorg.gradle.workers.max=2"
-          CARGO_BUILD_JOBS: "2"
-        run: npx tauri android build --ci --target aarch64 --debug --apk
+          GRADLE_OPTS: "-Xmx2g -Dorg.gradle.workers.max=1"
+          CARGO_BUILD_JOBS: "1"
+          CARGO_INCREMENTAL: "0"
+          CARGO_PROFILE_RELEASE_LTO: "off"
+          CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "1"
+        run: npx tauri android build --ci --target aarch64 --apk
 
-      - name: Upload signed Android APK
+      - name: Upload Android APK
         uses: actions/upload-artifact@v4
         with:
-          name: StudyBites-android-debug
+          name: StudyBites-android-release
           path: src-tauri/gen/android/**/build/outputs/apk/**/*.apk
           retention-days: 7
           if-no-files-found: error
 
-      - name: Publish signed Android APK
+      - name: Publish Android APK
         if: ${{ startsWith(github.ref, 'refs/tags/') }}
         uses: softprops/action-gh-release@v2
         with:

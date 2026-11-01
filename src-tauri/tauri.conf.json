@@ -43,6 +43,7 @@
     "windows": {
       "nsis": {
         "installMode": "currentUser",
+        "startMenuFolder": "StudyBites",
         "languages": ["English"],
         "displayLanguageSelector": false
       }

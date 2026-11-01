@@ -40,6 +40,9 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Set release version from tag
+        run: node scripts/set-release-version.mjs
+
       # SQLCipher is built from source with vendored OpenSSL, so there is no
       # dependency on an OpenSSL installation being present. Building OpenSSL
       # on Windows does need NASM and Perl; the runner image ships both, so
