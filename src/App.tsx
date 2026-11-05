@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { backend, errorText, isDesktop, type LicenseStatus, type Subject } from "./api";
+import { Screen } from "./components/Screen";
 import { Banner } from "./components/ui";
 import { CbtPage } from "./routes/CbtPage";
 import { HomePage } from "./routes/HomePage";
@@ -98,12 +99,12 @@ export function App() {
   // point assumes an unlocked database.
   if (bootError && !license) {
     return (
-      <div className="gate">
+      <Screen className="gate">
         <div className="gate__inner">
           <h1 className="display">StudyBites could not start</h1>
           <Banner kind="error">{bootError}</Banner>
         </div>
-      </div>
+      </Screen>
     );
   }
   if (!license) return null;

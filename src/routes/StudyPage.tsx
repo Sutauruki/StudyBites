@@ -9,6 +9,7 @@ import {
   type StudySession,
 } from "../api";
 import { Banner, Empty, Loading } from "../components/ui";
+import { Screen } from "../components/Screen";
 
 type Phase = "loading" | "studying" | "finished";
 
@@ -221,8 +222,10 @@ export function StudyPage({
   if (!current) return <Loading label="Finishing up…" />;
 
   return (
-    <>
-      <div className="study__bar">
+    <Screen
+      className="screen--nav screen--study"
+      header={
+        <div className="study__bar">
         <span className="muted">
           {index + 1} of {session?.cards.length}
           {current.isNew ? " · new" : ""}
@@ -235,7 +238,28 @@ export function StudyPage({
         <button className="btn btn--ghost" onClick={() => void finish()}>
           End <kbd>Esc</kbd>
         </button>
-      </div>
+        </div>
+      }
+      footer={
+        !revealed && !writeIn ? (
+          <button className="btn btn--primary btn--big" onClick={() => setRevealed(true)}>
+            Reveal <kbd>Space</kbd>
+          </button>
+        ) : revealed ? (
+          <div className="study__grades">
+            {GRADES.map((g) => (
+              <button
+                key={g.rating}
+                className={`btn${g.rating === suggested ? " btn--primary" : ""}`}
+                onClick={() => void grade(g.rating)}
+              >
+                {g.label} <kbd>{g.key}</kbd>
+              </button>
+            ))}
+          </div>
+        ) : undefined
+      }
+    >
 
       {error && <Banner kind="error">{error}</Banner>}
       {current.card.isPreview && (
@@ -263,29 +287,13 @@ export function StudyPage({
           onSkip={() => setRevealed(true)}
           onSubmit={submitWritten}
         />
-      ) : !revealed ? (
-        <button className="btn btn--primary btn--big" onClick={() => setRevealed(true)}>
-          Reveal <kbd>Space</kbd>
-        </button>
-      ) : (
-        <div className="study__grades">
-          {GRADES.map((g) => (
-            <button
-              key={g.rating}
-              className={`btn${g.rating === suggested ? " btn--primary" : ""}`}
-              onClick={() => void grade(g.rating)}
-            >
-              {g.label} <kbd>{g.key}</kbd>
-            </button>
-          ))}
-        </div>
-      )}
+      ) : null}
       {revealed && suggested !== null && (
         <p className="muted study__suggestion">
           Marked for you — change it if that is not how it felt.
         </p>
       )}
-    </>
+    </Screen>
   );
 }
 

@@ -3,6 +3,7 @@
 
 *, *::before, *::after { box-sizing: border-box; }
 html, body, #root { height: 100%; }
+html, body { overflow-x: hidden; }
 
 body {
   margin: 0;
@@ -134,6 +135,43 @@ button, input, select { font-family: inherit; }
 .sidebar__foot { margin-top: auto; }
 
 .main { min-height: 0; overflow-y: auto; }
+
+.screen {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+.screen__header,
+.screen__footer { flex: 0 0 auto; }
+.screen__body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.screen__footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
+  padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+}
+.screen__footer > .btn:only-child,
+.screen__footer > .action > .btn:only-child {
+  width: 100%;
+  min-height: 52px;
+}
+.screen--nav .screen__body { width: 100%; }
+.screen--nav .screen__footer { bottom: 0; }
+.cbt__footer { display: flex; align-items: center; gap: var(--s-3); }
+.cbt__footer .cbt__move { flex: 1 1 auto; }
+.cbt__footer > .btn { flex: 0 0 auto; }
 
 /* Content fills the window. Only prose is held to a readable measure. */
 .content {
@@ -365,12 +403,16 @@ select.input { cursor: pointer; }
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow);
   width: 100%; max-width: 460px; max-height: 86vh;
-  overflow-y: auto; padding: var(--s-5);
+  overflow: hidden; padding: 0;
   display: flex; flex-direction: column; gap: var(--s-4);
   animation: rise var(--t-base) both;
 }
 .modal--wide { max-width: 680px; }
 .modal__actions { display: flex; justify-content: flex-end; gap: var(--s-2); padding-top: var(--s-1); }
+.modal .screen { min-height: 0; max-height: 86vh; }
+.modal .screen__body { padding: var(--s-5); }
+.modal .screen__header { padding: var(--s-5) var(--s-5) 0; }
+.modal .screen__footer { padding: 0 var(--s-5) var(--s-5); border-top: 0; }
 
 @keyframes fade { from { opacity: 0; } }
 @keyframes rise { from { opacity: 0; transform: translateY(6px); } }
@@ -795,9 +837,7 @@ kbd {
    sidebar yet, and offering one would only invite looking for a way round. */
 .gate {
   min-height: 100vh;
-  display: grid;
-  place-items: start center;
-  overflow-y: auto;
+  min-height: 100dvh;
   padding: calc(clamp(var(--s-5), 6vh, var(--s-9)) + env(safe-area-inset-top))
     max(var(--s-5), env(safe-area-inset-left))
     calc(var(--s-8) + env(safe-area-inset-bottom))
@@ -805,7 +845,19 @@ kbd {
   background: var(--bg);
 }
 
+.gate .screen__body {
+  width: 100%;
+  align-items: center;
+  padding: 0;
+}
+.gate .screen__footer {
+  width: min(100%, 58ch);
+  align-self: center;
+  background: var(--bg);
+}
 .gate__inner {
+  flex: 1 1 auto;
+  min-height: 0;
   width: 100%;
   max-width: 58ch;
   min-width: 0;
@@ -825,7 +877,8 @@ kbd {
 /* The agreement scrolls inside its own frame, so the accept control stays
    where the eye left it instead of being pushed off the page. */
 .gate__doc {
-  max-height: min(46vh, 420px);
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
   padding: var(--s-5);
   background: var(--surface);
@@ -1137,11 +1190,13 @@ kbd {
   :root {
     --fs-card: 1.55rem;
     --s-8: 40px;
+    --nav-height: 74px;
   }
 
   html, body, #root { min-height: 100%; }
   body { font-size: var(--fs-md); }
   button, select, input, textarea { touch-action: manipulation; }
+  input, select, textarea { font-size: 16px; }
 
   .app {
     display: flex;
@@ -1182,17 +1237,21 @@ kbd {
   }
 
   .gate {
-    min-height: 100svh;
     min-height: 100dvh;
-    padding: max(48px, calc(env(safe-area-inset-top) + 24px))
+    padding: max(24px, calc(env(safe-area-inset-top) + 16px))
       max(20px, env(safe-area-inset-left))
-      max(32px, env(safe-area-inset-bottom))
+      0
       max(20px, env(safe-area-inset-right));
+  }
+  .gate .screen__body { padding-bottom: 12px; }
+  .gate .screen__footer {
+    padding: 12px 0 max(12px, env(safe-area-inset-bottom));
   }
   .gate__inner { gap: 20px; }
   .gate__lede { font-size: var(--fs-md); }
   .gate__doc {
-    max-height: 42dvh;
+    flex: 1 1 auto;
+    min-height: 0;
     padding: 16px;
   }
   .gate__agree {
@@ -1205,8 +1264,8 @@ kbd {
     height: 22px;
     margin: 0.1em 4px 0 0;
   }
-  .gate .action,
-  .gate .action .btn { width: 100%; }
+  .gate .screen__footer > .btn { width: 100%; min-height: 52px; }
+  .gate .screen__footer > .banner { margin-bottom: 12px; }
 
   .sidebar {
     order: 2;
@@ -1218,7 +1277,7 @@ kbd {
     flex: 0 0 auto;
     align-items: stretch;
     gap: 4px;
-    min-height: 68px;
+    min-height: var(--nav-height);
     padding: 6px 8px max(6px, env(safe-area-inset-bottom));
     background: color-mix(in srgb, var(--surface) 94%, transparent);
     border-top: 1px solid var(--border);
@@ -1310,14 +1369,33 @@ kbd {
     padding: 0;
   }
   .modal {
-    max-height: min(90dvh, 720px);
+    max-height: 100dvh;
     border-radius: 18px 18px 0 0;
-    padding: 20px 16px max(20px, env(safe-area-inset-bottom));
+    padding: 0;
   }
+  .modal .screen { max-height: 100dvh; }
+  .modal .screen__header { padding: 20px 16px 0; }
+  .modal .screen__body { padding: 20px 16px; }
+  .modal .screen__footer { padding: 0 16px max(20px, env(safe-area-inset-bottom)); }
   .modal__actions {
     flex-direction: column-reverse;
   }
   .modal__actions .btn { width: 100%; }
+
+  .screen--nav .screen__footer {
+    bottom: var(--nav-height);
+  }
+  .cbt__footer {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .cbt__footer .cbt__move {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .cbt__footer > .btn { width: 100%; }
 
   .study__bar {
     justify-content: space-between;

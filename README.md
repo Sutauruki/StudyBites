@@ -52,9 +52,10 @@ data. Versioned releases must use increasing `vMAJOR.MINOR.PATCH` tags.
 Android builds target aarch64 only, so the APK is 64-bit and will not install
 on some older or budget phones that run 32-bit Android. The Android workflow
 publishes every main build to the **Latest build** pre-release. Download the
-APK from **GitHub -> Releases -> Latest build**, then install it over the old
-version rather than uninstalling first, because uninstalling Android removes
-app data.
+`StudyBites_<version>_arm64.apk` from **GitHub -> Releases -> Latest build**,
+then install it over the old version rather than uninstalling first, because
+uninstalling Android removes app data. Tagged releases use the same filename
+pattern.
 
 Android updates require the same application ID and the same production
 keystore. Configure these GitHub Actions secrets before building:
@@ -113,6 +114,10 @@ cargo test --workspace
 ```
 
 The devcontainer in `.devcontainer/` installs those for you.
+
+Mobile screens use the shared `Screen` layout primitive for scrollable bodies,
+safe-area handling and bottom-anchored actions. See
+[`docs/UI_GUIDE.md`](docs/UI_GUIDE.md) before adding a screen or dialog.
 
 ### Building the real desktop app
 
