@@ -206,7 +206,7 @@ fn a_database_copied_to_another_device_will_not_open() {
     let theirs = crypto::derive(&profile_for("device-two").device_id().unwrap(), &secret);
     assert!(
         Db::open(&path, Key::Raw(&theirs.db)).is_err(),
-        "copying the data folder to another PC must get them nothing"
+        "copying the data folder to another device must get them nothing"
     );
 
     // And it still opens for its owner.

@@ -199,7 +199,7 @@ which copying the database to another machine stops working.
 
 ## Licensing and activation
 
-StudyBites is sold per device. A copy works only on the computer it was
+StudyBites is sold per device. A copy works only on the device it was
 activated for, so passing the installer or the app folder to a friend gets
 them nothing.
 
@@ -246,13 +246,13 @@ is gitignored. `license-tool list --key owner.key` shows them.
 
 ### Reinstalls
 
-Reinstalling on the same computer works with the same activation code —
+Reinstalling on the same device works with the same activation code —
 re-issuing produces the identical code, by design, because the code is half
 the key to that student's database. Issuing a *new* secret for a machine
 that already has one would destroy their notes, so the tool deliberately
 reuses the old one.
 
-A new computer, or a Windows reinstall, needs a new code.
+A new device, or a Windows reinstall, needs a new code.
 
 ### What this does and does not do
 
@@ -261,7 +261,7 @@ is unbreakable.** Someone determined and skilled could patch the binary. The
 goal is narrower and achievable — make *copying* useless:
 
 * The database and the stored originals are encrypted with a key derived from
-  the machine and the licence. Copying the data folder to another PC produces
+  the machine and the licence. Copying the data folder to another device produces
   a different key, and the files simply do not open.
 * An activation code for one machine is refused on another, even though its
   signature is genuine.

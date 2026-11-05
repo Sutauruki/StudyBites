@@ -165,7 +165,7 @@ impl AppState {
         let tag = self.profile.device_tag()?;
         if !verified.matches_device(&tag) {
             return Err(CoreError::Invalid(
-                "that activation code belongs to a different computer. Each code works on the \
+                "that activation code belongs to a different device. Each code works on the \
                  one device it was issued for."
                     .into(),
             ));
@@ -312,4 +312,4 @@ pub const LOCK_FAILED: &str =
 
 /// Shown when a command that needs data runs before activation.
 pub const NOT_ACTIVATED: &str =
-    "StudyBites is not activated on this computer yet. Enter your activation code to continue.";
+    "StudyBites is not activated on this device yet. Enter your activation code to continue.";

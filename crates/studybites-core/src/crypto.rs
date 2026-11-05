@@ -146,7 +146,7 @@ pub fn open(key: &SecretKey, aad: &[u8], sealed: &[u8]) -> Result<Vec<u8>> {
         .map_err(|_| {
             CoreError::Invalid(
                 "that stored file could not be decrypted on this device — it may have been \
-                 copied from another PC or altered"
+                 copied from another device or altered"
                     .into(),
             )
         })
