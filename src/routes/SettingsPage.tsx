@@ -416,7 +416,7 @@ function AboutSection({ license }: { license: LicenseStatus }) {
         <div className="stack">
           {license.licensingEnabled ? (
             <p className="muted">
-              Licensed to <strong>{license.buyerName ?? "this device"}</strong>, for this computer
+              Licensed to <strong>{license.buyerName ?? "this device"}</strong>, for this device
               only.
             </p>
           ) : (
@@ -428,9 +428,8 @@ function AboutSection({ license }: { license: LicenseStatus }) {
 
           {license.deviceChanged.length > 0 && (
             <p className="muted">
-              Some parts of this computer have changed since activation (
-              {license.deviceChanged.join(", ")}). That is fine — your licence still works. It is
-              noted only so a real problem is easier to recognise.
+              Parts of this device have changed since activation ({license.deviceChanged.join(", ")}).
+              Your licence still works.
             </p>
           )}
 

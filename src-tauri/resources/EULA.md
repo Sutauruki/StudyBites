@@ -23,7 +23,7 @@ was issued to.
   this clause.
 - Use one activation code on more than one device.
 
-Your activation code only works on the computer it was issued for, so sharing
+Your activation code only works on the device it was issued for, so sharing
 it achieves nothing in any case.
 
 ## 3. Your study materials are yours
@@ -50,7 +50,7 @@ Your results are your responsibility.
 ## 5. Backups
 
 Your data lives on your device and is encrypted with a key derived from that
-device. If the computer is lost, reset or reinstalled, the data cannot be
+device. If the device is lost, reset or reinstalled, the data cannot be
 recovered — not by you and not by the owner. Keep your own copies of anything
 you cannot afford to lose.
 

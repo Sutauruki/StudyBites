@@ -414,3 +414,7 @@ fails with the missing secret name when signing is not configured, rejects an
 pre-release. The build remains aarch64-only for now, so 32-bit Android phones
 are explicitly unsupported. The keystore is never committed and must be
 backed up outside the repository.
+
+### D35. Device wording stays short in licensing UI
+
+UI copy says device, not PC or computer; helper text kept short.

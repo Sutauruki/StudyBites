@@ -40,9 +40,8 @@ function EulaGate({ onAccepted }: { onAccepted: (status: LicenseStatus) => void 
       <div className="gate__inner">
         <h1 className="display">Before you start</h1>
         <p className="gate__lede">
-          The short version: StudyBites is licensed to you for one computer, your notes stay on
-          this device, and anything the AI writes can be wrong — check it against your course
-          material.
+          StudyBites is licensed to you for one device, your notes stay on this device, and AI can
+          be wrong, so check it against your course material.
         </p>
 
         {error && <Banner kind="error">{error}</Banner>}
@@ -116,8 +115,7 @@ function ActivationGate({
       <div className="gate__inner">
         <h1 className="display">Activate StudyBites</h1>
         <p className="gate__lede">
-          Activation happens once, in person, and needs no internet. Send the owner the request
-          code below; they will send back an activation code for this computer.
+          Send your request code to the owner, then paste the activation code they send back.
         </p>
 
         <section className="stack">
@@ -140,7 +138,7 @@ function ActivationGate({
             >
               {copied ? "Copied" : "Copy"}
             </button>
-            <span className="muted">It is safe to share — it only identifies this PC.</span>
+            <span className="muted">Safe to share. It only identifies this device.</span>
           </div>
         </section>
 
@@ -152,13 +150,9 @@ function ActivationGate({
             rows={4}
             spellCheck={false}
             autoComplete="off"
-            placeholder="Paste the code you were sent…"
+            placeholder="Paste your activation code"
             onChange={(e) => setCode(e.target.value)}
           />
-          <p className="muted">
-            Dashes, spaces and capitals do not matter, and the letters I, L and O are read as 1, 1
-            and 0 — so they are safe to mix up.
-          </p>
         </section>
 
         {error && <Banner kind="error">{error}</Banner>}

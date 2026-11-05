@@ -70,7 +70,7 @@ impl DeviceProfile {
     pub fn device_id(&self) -> Result<[u8; 32]> {
         let guid = self.machine_guid.as_deref().ok_or_else(|| {
             CoreError::Invalid(
-                "StudyBites could not read this computer's Windows machine identifier, so it \
+                "StudyBites could not read this device's identifier, so it \
                  cannot be activated here. This usually means the registry is restricted."
                     .into(),
             )
