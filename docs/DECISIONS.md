@@ -418,3 +418,10 @@ backed up outside the repository.
 ### D35. Device wording stays short in licensing UI
 
 UI copy says device, not PC or computer; helper text kept short.
+
+### D36. Android releases publish one named arm64 APK
+
+The Android workflow requires exactly one signed APK, renames it to
+`StudyBites_<version>_arm64.apk`, verifies its certificate when `apksigner` is
+available, removes stale APK assets from the rolling release, and publishes
+the file directly instead of uploading a zipped Actions artifact.

@@ -132,13 +132,53 @@ jobs:
               ;;
           esac
 
-      - name: Upload Android APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: StudyBites-android-release
-          path: src-tauri/gen/android/**/build/outputs/apk/**/*.apk
-          retention-days: 7
-          if-no-files-found: error
+      - name: Name the APK
+        env:
+          ANDROID_HOME: ${{ env.ANDROID_HOME }}
+        run: |
+          mapfile -t apks < <(find src-tauri/gen/android -path '*/build/outputs/apk/**/*.apk' -type f)
+          if [ "${#apks[@]}" -ne 1 ]; then
+            echo "::error::Expected exactly one Android APK, found ${#apks[@]}."
+            printf '%s\n' "${apks[@]}"
+            exit 1
+          fi
+
+          version=$(node --input-type=module -e \
+            "import fs from 'node:fs'; console.log(JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json', 'utf8')).version)")
+          mkdir -p dist
+          apk_name="StudyBites_${version}_arm64.apk"
+          cp "${apks[0]}" "dist/${apk_name}"
+          echo "APK_NAME=${apk_name}" >> "$GITHUB_ENV"
+          echo "Named APK: ${apk_name}"
+
+          apksigner=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)
+          if [ -n "$apksigner" ]; then
+            certs=$("$apksigner" verify --print-certs "dist/${apk_name}")
+            printf '%s\n' "$certs"
+            fingerprint=$(printf '%s\n' "$certs" | grep -m1 'certificate SHA-256 digest:')
+            if [ -z "$fingerprint" ]; then
+              echo "::error::apksigner did not print a certificate SHA-256 fingerprint."
+              exit 1
+            fi
+            echo "Signing certificate: ${fingerprint}"
+          else
+            echo "apksigner was not found; skipping certificate fingerprint verification."
+          fi
+
+      - name: Remove stale APKs from rolling latest
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if assets=$(gh release view latest --json assets --jq '.assets[].name' 2>/dev/null); then
+            while IFS= read -r asset; do
+              if [[ "$asset" == *.apk && "$asset" != "$APK_NAME" ]]; then
+                gh release delete-asset latest "$asset" --yes
+              fi
+            done <<< "$assets"
+          else
+            echo "Latest release was not found; no stale APKs to remove."
+          fi
 
       - name: Publish to the rolling latest pre-release
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
@@ -147,7 +187,7 @@ jobs:
           tag_name: latest
           name: Latest build
           prerelease: true
-          files: src-tauri/gen/android/**/build/outputs/apk/**/*.apk
+          files: dist/StudyBites_*_arm64.apk
           fail_on_unmatched_files: true
 
       - name: Publish Android APK
@@ -156,5 +196,18 @@ jobs:
         with:
           name: StudyBites ${{ github.ref_name }}
           generate_release_notes: true
-          files: src-tauri/gen/android/**/build/outputs/apk/**/*.apk
+          files: dist/StudyBites_*_arm64.apk
           fail_on_unmatched_files: true
+
+      - name: Write release summary
+        env:
+          REPOSITORY: ${{ github.repository }}
+          SERVER_URL: ${{ github.server_url }}
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            release_url="${SERVER_URL}/${REPOSITORY}/releases/tag/${GITHUB_REF_NAME}"
+          else
+            release_url="${SERVER_URL}/${REPOSITORY}/releases/tag/latest"
+          fi
+          echo "Android release asset: \`${APK_NAME}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "Download: [${APK_NAME}](${release_url})" >> "$GITHUB_STEP_SUMMARY"
