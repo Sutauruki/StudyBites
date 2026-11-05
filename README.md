@@ -49,13 +49,33 @@ directory rather than beside the executable. Running a newer installer over
 the existing installation updates the program files without deleting that
 data. Versioned releases must use increasing `vMAJOR.MINOR.PATCH` tags.
 
+Android builds target aarch64 only, so the APK is 64-bit and will not install
+on some older or budget phones that run 32-bit Android. The Android workflow
+publishes every main build to the **Latest build** pre-release. Download the
+APK from **GitHub -> Releases -> Latest build**, then install it over the old
+version rather than uninstalling first, because uninstalling Android removes
+app data.
+
 Android updates require the same application ID and the same production
-keystore. Release-tag builds use the `ANDROID_KEY_BASE64`,
-`ANDROID_KEY_ALIAS`, and `ANDROID_KEY_PASSWORD` GitHub secrets; these must
-remain unchanged for the lifetime of the app. Install the new APK over the
-old one rather than uninstalling first, because uninstalling Android removes
-app data. The Android workflow intentionally fails a tagged release when
-those signing secrets are missing.
+keystore. Configure these GitHub Actions secrets before building:
+
+1. Create a PKCS12 keystore with one password (the command prompts for it):
+
+   ```bash
+   keytool -genkeypair -v -storetype PKCS12 \
+     -keystore studybites-release.jks -alias studybites -keyalg RSA \
+     -keysize 2048 -validity 10000
+   ```
+
+2. Set `ANDROID_KEY_BASE64` to the one-line output of
+   `base64 -w0 studybites-release.jks`, `ANDROID_KEY_ALIAS` to `studybites`,
+   and `ANDROID_KEY_PASSWORD` to that same keystore password. The signing
+   script uses one password for both the keystore and key.
+3. Confirm `STUDYBITES_LICENSE_PUBKEY` is also configured if activation is
+   enabled.
+
+Never commit the `.jks` file. Keep a secure backup of it and its password;
+losing the production keystore prevents updates over existing installations.
 
 ---
 

@@ -402,3 +402,15 @@ Two smaller choices fall out of the same thinking:
 * **The answer key does not reach the WebView until the paper is submitted.**
   `cbt_start` returns questions only; `cbt_submit` returns the marking. An
   exam whose answers are already sitting in the page is not an exam.
+
+## Release and roadmap decisions
+
+### D34. Android main builds are signed and published as the rolling latest release
+
+Every Android build uses the production PKCS12 keystore, including builds from
+`main`, so the APK can be installed over the previous version. The workflow
+fails with the missing secret name when signing is not configured, rejects an
+`-unsigned.apk`, and publishes the signed APK to the rolling `latest`
+pre-release. The build remains aarch64-only for now, so 32-bit Android phones
+are explicitly unsupported. The keystore is never committed and must be
+backed up outside the repository.
