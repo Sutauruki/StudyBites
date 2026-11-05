@@ -12,7 +12,7 @@ Status markers: [ ] not started, [~] in progress, [x] complete.
 8. [ ] Diagram cards (image occlusion)
 9. [ ] Study planner with exam readiness; course priority from credit units (asked when creating a course), exam date, readiness, uncovered topics; student can pin a priority
 10. [ ] Quick wins: solo streaks and daily goal, daily reminders, "Did you know?" facts (about 100 curated), card-pack file share/import, encrypted backup export/import, data-saver mode with a "Waiting for Wi-Fi" indicator (Send now / Change setting)
-11. [ ] Mobile layout pass and Android build check
+11. [~] Mobile layout pass and Android build check
 12. [ ] Automated licensing, free trials, coupons and referral codes, card packs by link (open only inside the app, no download page)
 13. [ ] Web version and managed AI
 14. [ ] Group streaks and streak partners (a member's missed day affects the group streak; streak freeze; optional anonymous scores)

@@ -8,6 +8,7 @@ import {
   type Subject,
 } from "../api";
 import { Banner, Empty, Loading, Modal } from "../components/ui";
+import { Screen } from "../components/Screen";
 
 type Stage =
   | { name: "setup" }
@@ -320,8 +321,10 @@ function Sitting({
   if (!question) return <Loading label="Preparing…" />;
 
   return (
-    <div className="cbt">
-      <header className="cbt__bar">
+    <Screen
+      className="screen--nav screen--cbt"
+      header={
+        <div className="cbt__bar">
         <span className="cbt__count">
           Question {at + 1} <span className="muted">of {test.questions.length}</span>
         </span>
@@ -333,10 +336,41 @@ function Sitting({
         >
           {clock}
         </span>
-        <button className="btn btn--primary" onClick={() => setConfirming(true)}>
-          Submit
-        </button>
-      </header>
+        </div>
+      }
+      footer={
+        <div className="cbt__footer">
+          <div className="cbt__move">
+            <button className="btn" disabled={at === 0} onClick={() => setAt((i) => i - 1)}>
+              Previous
+            </button>
+            <button
+              className="btn btn--ghost"
+              aria-pressed={flagged.has(at)}
+              onClick={() =>
+                setFlagged((current) => {
+                  const next = new Set(current);
+                  if (!next.delete(at)) next.add(at);
+                  return next;
+                })
+              }
+            >
+              {flagged.has(at) ? "Unflag" : "Flag for review"}
+            </button>
+            <button
+              className="btn"
+              disabled={at === test.questions.length - 1}
+              onClick={() => setAt((i) => i + 1)}
+            >
+              Next
+            </button>
+          </div>
+          <button className="btn btn--primary" onClick={() => setConfirming(true)}>
+            Submit
+          </button>
+        </div>
+      }
+    >
 
       {error && <Banner kind="error">{error}</Banner>}
 
@@ -364,31 +398,6 @@ function Sitting({
             ))}
           </div>
 
-          <div className="cbt__move">
-            <button className="btn" disabled={at === 0} onClick={() => setAt((i) => i - 1)}>
-              Previous
-            </button>
-            <button
-              className="btn btn--ghost"
-              aria-pressed={flagged.has(at)}
-              onClick={() =>
-                setFlagged((current) => {
-                  const next = new Set(current);
-                  if (!next.delete(at)) next.add(at);
-                  return next;
-                })
-              }
-            >
-              {flagged.has(at) ? "Unflag" : "Flag for review"}
-            </button>
-            <button
-              className="btn"
-              disabled={at === test.questions.length - 1}
-              onClick={() => setAt((i) => i + 1)}
-            >
-              Next
-            </button>
-          </div>
         </main>
 
         {/* The grid every CBT has: where you are, what is done, what is left. */}
@@ -442,7 +451,7 @@ function Sitting({
           </button>
         </Modal>
       )}
-    </div>
+    </Screen>
   );
 }
 

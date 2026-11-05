@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { backend, errorText, type LicenseStatus } from "../api";
 import { Banner, Loading } from "../components/ui";
+import { Screen } from "../components/Screen";
 
 /**
  * First launch: the agreement, then activation (Brief 8.2 and 13).
@@ -36,7 +37,36 @@ function EulaGate({ onAccepted }: { onAccepted: (status: LicenseStatus) => void 
   }, []);
 
   return (
-    <div className="gate">
+    <Screen
+      className="gate"
+      footer={
+        <>
+          <label className="gate__agree">
+            <input
+              type="checkbox"
+              checked={agreed}
+              onChange={(e) => setAgreed(e.target.checked)}
+            />
+            <span>I have read and accept this agreement.</span>
+          </label>
+          <button
+            className="btn btn--primary btn--big"
+            disabled={!agreed || busy || text === null}
+            onClick={async () => {
+              setBusy(true);
+              try {
+                onAccepted(await backend.eulaAccept());
+              } catch (err) {
+                setError(errorText(err));
+                setBusy(false);
+              }
+            }}
+          >
+            {busy ? "One moment…" : "Accept and continue"}
+          </button>
+        </>
+      }
+    >
       <div className="gate__inner">
         <h1 className="display">Before you start</h1>
         <p className="gate__lede">
@@ -54,34 +84,8 @@ function EulaGate({ onAccepted }: { onAccepted: (status: LicenseStatus) => void 
           </article>
         )}
 
-        <label className="gate__agree">
-          <input
-            type="checkbox"
-            checked={agreed}
-            onChange={(e) => setAgreed(e.target.checked)}
-          />
-          <span>I have read and accept this agreement.</span>
-        </label>
-
-        <div className="action">
-          <button
-            className="btn btn--primary btn--big"
-            disabled={!agreed || busy || text === null}
-            onClick={async () => {
-              setBusy(true);
-              try {
-                onAccepted(await backend.eulaAccept());
-              } catch (err) {
-                setError(errorText(err));
-                setBusy(false);
-              }
-            }}
-          >
-            {busy ? "One moment…" : "Accept and continue"}
-          </button>
-        </div>
       </div>
-    </div>
+    </Screen>
   );
 }
 
@@ -101,17 +105,41 @@ function ActivationGate({
   // rather than showing a box that will always reject what is typed into it.
   if (status.problem) {
     return (
-      <div className="gate">
+      <Screen className="gate">
         <div className="gate__inner">
           <h1 className="display">StudyBites cannot run here</h1>
           <Banner kind="error">{status.problem}</Banner>
         </div>
-      </div>
+      </Screen>
     );
   }
 
   return (
-    <div className="gate">
+    <Screen
+      className="gate"
+      footer={
+        <>
+          {error && <Banner kind="error">{error}</Banner>}
+          <button
+            className="btn btn--primary btn--big"
+            disabled={busy || code.trim().length === 0}
+            onClick={async () => {
+              setBusy(true);
+              setError(null);
+              try {
+                onActivated(await backend.activate(code));
+              } catch (err) {
+                setError(errorText(err));
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            {busy ? "Checking…" : "Activate"}
+          </button>
+        </>
+      }
+    >
       <div className="gate__inner">
         <h1 className="display">Activate StudyBites</h1>
         <p className="gate__lede">
@@ -155,29 +183,8 @@ function ActivationGate({
           />
         </section>
 
-        {error && <Banner kind="error">{error}</Banner>}
-
-        <div className="action">
-          <button
-            className="btn btn--primary btn--big"
-            disabled={busy || code.trim().length === 0}
-            onClick={async () => {
-              setBusy(true);
-              setError(null);
-              try {
-                onActivated(await backend.activate(code));
-              } catch (err) {
-                setError(errorText(err));
-              } finally {
-                setBusy(false);
-              }
-            }}
-          >
-            {busy ? "Checking…" : "Activate"}
-          </button>
-        </div>
       </div>
-    </div>
+    </Screen>
   );
 }
 

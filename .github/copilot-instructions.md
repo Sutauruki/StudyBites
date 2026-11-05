@@ -4,3 +4,4 @@
 - Work on one roadmap item at a time.
 - When a roadmap item is completed, update `docs/ROADMAP.md` and record the decision in `docs/DECISIONS.md`.
 - Read docs/WORKING_RULES.md at the start of every session and follow it, including the handoff report template,
+- Any new screen or dialog must use the `Screen` primitive and follow `docs/UI_GUIDE.md`.

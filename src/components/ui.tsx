@@ -1,4 +1,5 @@
 import { useEffect, useRef, type ReactNode } from "react";
+import { Screen } from "./Screen";
 
 export function Banner({ kind, children }: { kind: "error" | "info"; children: ReactNode }) {
   return (
@@ -71,10 +72,16 @@ export function Modal({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className={`modal${wide ? " modal--wide" : ""}`} ref={box} role="dialog" aria-modal="true" aria-label={title}>
-        <h2>{title}</h2>
-        {children}
-        <div className="modal__actions">{actions}</div>
+      <div
+        className={`modal${wide ? " modal--wide" : ""}`}
+        ref={box}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+      >
+        <Screen header={<h2>{title}</h2>} footer={<div className="modal__actions">{actions}</div>}>
+          {children}
+        </Screen>
       </div>
     </div>
   );

@@ -425,3 +425,9 @@ The Android workflow requires exactly one signed APK, renames it to
 `StudyBites_<version>_arm64.apk`, verifies its certificate when `apksigner` is
 available, removes stale APK assets from the rolling release, and publishes
 the file directly instead of uploading a zipped Actions artifact.
+
+### D37. Mobile actions use a shared Screen primitive
+
+`Screen` provides a full-height, contained scrolling body and a safe-area-aware
+footer. Gates, study, CBT, and dialogs use it so primary actions stay above
+the phone navigation bar and keyboard without changing desktop layout.

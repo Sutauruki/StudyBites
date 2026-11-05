@@ -115,6 +115,10 @@ cargo test --workspace
 
 The devcontainer in `.devcontainer/` installs those for you.
 
+Mobile screens use the shared `Screen` layout primitive for scrollable bodies,
+safe-area handling and bottom-anchored actions. See
+[`docs/UI_GUIDE.md`](docs/UI_GUIDE.md) before adding a screen or dialog.
+
 ### Building the real desktop app
 
 Only on Windows, and normally only in CI:
