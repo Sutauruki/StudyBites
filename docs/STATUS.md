@@ -1,6 +1,6 @@
 === STUDYBITES HANDOFF REPORT ===
 Task: A and B | Status: done
-Branch and last commit: ccr-cd109432-nnvymz ecd8b40 | CI: not run
+Branch and last commit: ccr-cd109432-nnvymz 76081b3 | CI: not run
 1. What I did (one line per change):
  - .github/workflows/build-mobile.yml (edited): signed every Android build, named missing secrets, rejected unsigned APKs, and published non-tag APKs to the rolling latest pre-release.
  - README.md (edited): documented latest APK installation, PKCS12 one-password signing, license public key, keystore backup, and aarch64-only support.
