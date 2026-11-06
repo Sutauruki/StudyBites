@@ -10,6 +10,7 @@ import {
 } from "../api";
 import { Banner, Empty, Loading } from "../components/ui";
 import { Screen } from "../components/Screen";
+import { clearResume, saveResume, type ResumeStudy } from "../lib/resume";
 
 type Phase = "loading" | "studying" | "finished";
 
@@ -29,10 +30,12 @@ const GRADES = [
 export function StudyPage({
   subjectId,
   minutes,
+  resume,
   onDone,
 }: {
   subjectId: number | null;
   minutes: number;
+  resume?: ResumeStudy;
   onDone: () => void;
 }) {
   const [phase, setPhase] = useState<Phase>("loading");
@@ -58,10 +61,24 @@ export function StudyPage({
     let alive = true;
     (async () => {
       try {
-        const started = await backend.sessionStart(subjectId, minutes);
+        const started = resume
+          ? await backend.sessionResume(resume.sessionId)
+          : await backend.sessionStart(subjectId, minutes);
+        if (resume && !started) {
+          clearResume();
+          onDone();
+          return;
+        }
         if (!alive) return;
+        if (!started) return;
         setSession(started);
         setPhase(started.cards.length === 0 ? "finished" : "studying");
+        if (resume) {
+          setSecondsLeft(Math.max(0, resume.secondsLeft));
+          setRevealed(resume.revealed);
+          setChosen(resume.chosen);
+          setWritten(resume.written);
+        }
         shownAt.current = Date.now();
 
         // One lookup per subject present, not per card.
@@ -84,9 +101,10 @@ export function StudyPage({
     return () => {
       alive = false;
     };
-  }, [subjectId, minutes]);
+  }, [minutes, onDone, resume, subjectId]);
 
   const finish = useCallback(async () => {
+    clearResume();
     if (!session) {
       onDone();
       return;
@@ -99,10 +117,60 @@ export function StudyPage({
     setPhase("finished");
   }, [session, onDone]);
 
+  const persistResume = useCallback(
+    (immediate = false) => {
+      if (!session || phase !== "studying") return;
+      saveResume(
+        {
+          v: 1,
+          savedAt: Date.now(),
+          view: { name: "study", subjectId, minutes },
+          study: {
+            sessionId: session.id,
+            subjectId,
+            minutes,
+            secondsLeft,
+            revealed,
+            chosen,
+            written,
+          },
+        },
+        immediate,
+      );
+    },
+    [chosen, minutes, phase, revealed, secondsLeft, session, subjectId, written],
+  );
+
+  useEffect(() => {
+    persistResume();
+  }, [persistResume]);
+
+  useEffect(() => {
+    if (phase !== "studying") return;
+    const timer = window.setInterval(() => persistResume(true), 5_000);
+    return () => window.clearInterval(timer);
+  }, [persistResume, phase]);
+
+  useEffect(() => {
+    if (phase !== "studying") return;
+    const flush = () => persistResume(true);
+    document.addEventListener("visibilitychange", flush);
+    window.addEventListener("pagehide", flush);
+    return () => {
+      document.removeEventListener("visibilitychange", flush);
+      window.removeEventListener("pagehide", flush);
+    };
+  }, [persistResume, phase]);
+
+  useEffect(() => {
+    if (phase === "finished") clearResume();
+  }, [phase]);
+
   // The clock ends the session, not a card count.
   useEffect(() => {
     if (phase !== "studying") return;
     const timer = window.setInterval(() => {
+      if (document.visibilityState !== "visible") return;
       setSecondsLeft((left) => {
         if (left <= 1) {
           window.clearInterval(timer);
@@ -262,6 +330,7 @@ export function StudyPage({
     >
 
       {error && <Banner kind="error">{error}</Banner>}
+      {resume && <p className="muted">Welcome back. Your session is where you left it.</p>}
       {current.card.isPreview && (
         <span className="chip chip--accent">AI preview — not from your class</span>
       )}

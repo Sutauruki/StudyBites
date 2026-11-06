@@ -611,6 +611,11 @@ export const mockBackend: Backend = {
     const rows = seedCards(read(), null);
     const session = rows.sessions.find((item) => item.id === sessionId);
     if (!session || session.endedAt !== null) return tick(null);
+    if (Date.now() - session.startedAt > 12 * 60 * 60 * 1000) {
+      session.endedAt = Date.now();
+      write(rows);
+      return tick(null);
+    }
     const remaining = session.cardIds
       .filter((id) => !session.doneCardIds.includes(id))
       .map((id) => rows.cards.find((card) => card.id === id))

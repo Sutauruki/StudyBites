@@ -9,17 +9,12 @@ import { SettingsPage } from "./routes/SettingsPage";
 import { StudyPage } from "./routes/StudyPage";
 import { SubjectPage } from "./routes/SubjectPage";
 import { SubjectsPage } from "./routes/SubjectsPage";
+import { clearResume, loadResume, saveResume, type ResumeSnapshot, type ResumeView } from "./lib/resume";
 
 export type Theme = "system" | "light" | "dark";
 
 /** Still a handful of screens, so this stands in for a router. */
-type View =
-  | { name: "home" }
-  | { name: "subjects" }
-  | { name: "subject"; id: number }
-  | { name: "study"; subjectId: number | null; minutes: number }
-  | { name: "cbt" }
-  | { name: "settings" };
+type View = ResumeView;
 
 const THEME_KEY = "theme";
 
@@ -37,6 +32,8 @@ export function App() {
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [due, setDue] = useState(0);
   const [license, setLicense] = useState<LicenseStatus | null>(null);
+  const [bootstrapped, setBootstrapped] = useState(false);
+  const [resume, setResume] = useState<ResumeSnapshot | null>(null);
 
   // The sidebar needs the subject list and the due count; both are cheap
   // database reads, so they refresh whenever the view changes.
@@ -70,6 +67,30 @@ export function App() {
         const next = (saved as Theme) ?? "system";
         setTheme(next);
         applyTheme(next);
+
+        let nextView: View = { name: "home" };
+        const savedResume = loadResume();
+        if (savedResume) {
+          const subjectId =
+            savedResume.view.name === "subject"
+              ? savedResume.view.id
+              : savedResume.view.name === "study"
+                ? savedResume.view.subjectId
+                : null;
+          if (subjectId !== null) {
+            try {
+              await backend.subjectGet(subjectId);
+            } catch {
+              clearResume();
+              savedResume.view = { name: "home" };
+            }
+          }
+          nextView = savedResume.view;
+          setResume(savedResume);
+        }
+        if (!alive) return;
+        setView(nextView);
+        setBootstrapped(true);
       } catch (err) {
         if (alive) setBootError(errorText(err));
       }
@@ -78,6 +99,16 @@ export function App() {
       alive = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!bootstrapped) return;
+    saveResume({
+      v: 1,
+      savedAt: Date.now(),
+      view,
+      ...(view.name === "study" && resume?.study ? { study: resume.study } : {}),
+    });
+  }, [bootstrapped, resume?.study, view]);
 
   useEffect(() => {
     if (license?.unlocked) void refreshNav();
@@ -199,6 +230,7 @@ export function App() {
             <StudyPage
               subjectId={view.subjectId}
               minutes={view.minutes}
+              resume={resume?.view.name === "study" ? resume.study : undefined}
               onDone={() => setView({ name: "home" })}
             />
           )}
