@@ -517,6 +517,12 @@ pub fn session_start(
 }
 
 #[tauri::command]
+pub fn session_resume(state: State<AppState>, session_id: i64) -> Ipc<Option<study::Session>> {
+    let db = lock(&state)?;
+    study::resume_session(&db, session_id).map_err(to_ipc)
+}
+
+#[tauri::command]
 pub fn session_grade(
     state: State<AppState>,
     session_id: Option<i64>,

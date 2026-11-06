@@ -94,6 +94,7 @@ export const tauriBackend: Backend = {
   dueCounts: (subjectId) => invoke("due_counts", { subjectId }),
   sessionStart: (subjectId, minutes, newLimit) =>
     invoke("session_start", { subjectId, minutes, newLimit: newLimit ?? null }),
+  sessionResume: (sessionId) => invoke("session_resume", { sessionId }),
   sessionGrade: (sessionId, cardId, rating, elapsedMs) =>
     invoke("session_grade", { sessionId, cardId, rating, elapsedMs }),
   sessionEnd: (sessionId) => invoke("session_end", { sessionId }),

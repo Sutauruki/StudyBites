@@ -215,6 +215,7 @@ export interface StudySession {
   cards: SessionCard[];
   dueCount: number;
   newCount: number;
+  cardsDone: number;
 }
 
 export interface GradeResult {
@@ -332,6 +333,7 @@ export interface Phase2Backend {
 
   dueCounts(subjectId: number | null): Promise<DueCounts>;
   sessionStart(subjectId: number | null, minutes: number, newLimit?: number): Promise<StudySession>;
+  sessionResume(sessionId: number): Promise<StudySession | null>;
   sessionGrade(
     sessionId: number | null,
     cardId: number,

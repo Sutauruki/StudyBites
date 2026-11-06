@@ -45,6 +45,18 @@ interface Rows {
   settings: Record<string, string>;
   materials: Material[];
   cards: Array<Card & { due: number; isNewCard: boolean }>;
+  sessions: MockSession[];
+}
+
+interface MockSession {
+  id: number;
+  subjectId: number | null;
+  plannedMinutes: number;
+  cardIds: number[];
+  doneCardIds: number[];
+  cardsDone: number;
+  startedAt: number;
+  endedAt: number | null;
 }
 
 const empty = (): Rows => ({
@@ -54,6 +66,7 @@ const empty = (): Rows => ({
   settings: {},
   materials: [],
   cards: [],
+  sessions: [],
 });
 
 function read(): Rows {
@@ -567,12 +580,25 @@ export const mockBackend: Backend = {
     const due = mine.filter((c) => !c.isNewCard && c.due <= now);
     const fresh = mine.filter((c) => c.isNewCard).slice(0, newLimit ?? 10);
     const chosen = [...due, ...fresh];
+    const id = rows.nextId++;
+    rows.sessions.push({
+      id,
+      subjectId,
+      plannedMinutes: minutes,
+      cardIds: chosen.map((card) => card.id),
+      doneCardIds: [],
+      cardsDone: 0,
+      startedAt: Date.now(),
+      endedAt: null,
+    });
+    write(rows);
     return tick<StudySession>({
-      id: 1,
+      id,
       subjectId,
       plannedMinutes: minutes,
       dueCount: due.length,
       newCount: fresh.length,
+      cardsDone: 0,
       cards: chosen.map((c) => ({
         card: c,
         isNew: c.isNewCard,
@@ -581,14 +607,46 @@ export const mockBackend: Backend = {
       })),
     });
   },
+  sessionResume: (sessionId) => {
+    const rows = seedCards(read(), null);
+    const session = rows.sessions.find((item) => item.id === sessionId);
+    if (!session || session.endedAt !== null) return tick(null);
+    const remaining = session.cardIds
+      .filter((id) => !session.doneCardIds.includes(id))
+      .map((id) => rows.cards.find((card) => card.id === id))
+      .filter((card): card is Rows["cards"][number] => card !== undefined);
+    const now = Date.now();
+    const due = remaining.filter((card) => !card.isNewCard && card.due <= now);
+    const fresh = remaining.filter((card) => card.isNewCard);
+    return tick<StudySession>({
+      id: session.id,
+      subjectId: session.subjectId,
+      plannedMinutes: session.plannedMinutes,
+      dueCount: due.length,
+      newCount: fresh.length,
+      cardsDone: session.cardsDone,
+      cards: remaining.map((c) => ({
+        card: c,
+        isNew: c.isNewCard,
+        topicTitle: rows.topics.find((t) => t.id === c.topicId)?.title ?? null,
+        subjectId:
+          session.subjectId ?? rows.topics.find((t) => t.id === c.topicId)?.subjectId ?? null,
+      })),
+    });
+  },
   sessionGrade: (_sessionId, cardId, rating) => {
     const rows = read();
+    const session = rows.sessions.find((item) => item.id === _sessionId);
     const card = rows.cards.find((c) => c.id === cardId);
     // Roughly mirrors FSRS: a failure returns soon, success pushes out.
     const days = rating === 1 ? 0 : rating === 2 ? 1 : rating === 3 ? 3 : 7;
     if (card) {
       card.isNewCard = false;
       card.due = Date.now() + days * 86_400_000;
+      if (session && !session.doneCardIds.includes(cardId)) {
+        session.doneCardIds.push(cardId);
+        session.cardsDone += 1;
+      }
       write(rows);
     }
     return tick<GradeResult>({
@@ -598,14 +656,19 @@ export const mockBackend: Backend = {
       state: rating === 1 ? "learning" : "review",
     });
   },
-  sessionEnd: (sessionId) =>
-    tick<SessionSummary>({
+  sessionEnd: (sessionId) => {
+    const rows = read();
+    const session = rows.sessions.find((item) => item.id === sessionId);
+    if (session) session.endedAt = Date.now();
+    write(rows);
+    return tick<SessionSummary>({
       sessionId,
-      cardsDone: 0,
+      cardsDone: session?.cardsDone ?? 0,
       topicsTouched: [],
       dueTomorrow: 0,
-      minutes: 10,
-    }),
+      minutes: session?.plannedMinutes ?? 10,
+    });
+  },
   mastery: (subjectId) => {
     const rows = read();
     return tick<TopicMastery[]>(

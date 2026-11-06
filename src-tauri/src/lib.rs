@@ -7,6 +7,7 @@ mod worker;
 
 use state::AppState;
 use std::sync::Arc;
+use studybites_core::study;
 use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -17,6 +18,14 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let state = AppState::load(app.handle())?;
+            if state.is_unlocked() {
+                let db = state
+                    .db
+                    .lock()
+                    .map_err(|_| "database lock failed".to_string())?;
+                study::close_stale_sessions(&db, 12)
+                    .map_err(|err| tauri::Error::Anyhow(err.into()))?;
+            }
             app.manage(state);
 
             // One background worker drains the ingestion queue.
@@ -67,6 +76,7 @@ pub fn run() {
             phase2::typed_answers_set,
             phase2::due_counts,
             phase2::session_start,
+            phase2::session_resume,
             phase2::session_grade,
             phase2::session_end,
             phase2::mastery,
