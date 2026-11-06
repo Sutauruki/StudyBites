@@ -167,6 +167,17 @@ pub const MIGRATIONS: &[&str] = &[
     );
     CREATE INDEX idx_cbt_answers_test ON cbt_answers(test_id, position);
     "#,
+    // ---- 005: resumable study sessions -----------------------------------
+    r#"
+    CREATE TABLE session_cards (
+        session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+        position   INTEGER NOT NULL,
+        card_id    INTEGER NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+        done       INTEGER NOT NULL DEFAULT 0 CHECK (done IN (0,1)),
+        PRIMARY KEY (session_id, position)
+    );
+    CREATE INDEX idx_session_cards_card ON session_cards(session_id, card_id);
+    "#,
 ];
 
 pub const SCHEMA_VERSION: i64 = MIGRATIONS.len() as i64;

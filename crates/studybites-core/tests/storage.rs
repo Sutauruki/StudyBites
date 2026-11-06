@@ -19,8 +19,8 @@ fn migrations_bring_schema_to_current_version() {
         )
         .unwrap();
     assert_eq!(
-        tables, 14,
-        "the Section 5 tables, plus EULA acceptance and the CBT tables"
+        tables, 15,
+        "the Section 5 tables, plus EULA acceptance, CBT, and resumable sessions"
     );
 }
 
@@ -28,6 +28,10 @@ fn migrations_bring_schema_to_current_version() {
 fn migrations_are_idempotent() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("sb.db");
+    {
+        let db = Db::open(&path, DEV_KEY).unwrap();
+        subjects::create(&db, "MTH 101").unwrap();
+    }
     for _ in 0..3 {
         let db = Db::open(&path, DEV_KEY).unwrap();
         assert_eq!(db.schema_version().unwrap(), migrations::SCHEMA_VERSION);

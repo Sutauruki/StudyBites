@@ -37,6 +37,7 @@ pub struct Session {
     pub cards: Vec<SessionCard>,
     pub due_count: i64,
     pub new_count: i64,
+    pub cards_done: i64,
 }
 
 /// How many cards are waiting, for the home screen's gentle "X due today".
@@ -102,14 +103,22 @@ pub fn start_session(
     let due_count = due.len() as i64;
     let new_count = fresh.len() as i64;
 
-    db.conn().execute(
+    let mut cards = due;
+    cards.extend(fresh);
+
+    let tx = db.conn_mut().transaction()?;
+    tx.execute(
         "INSERT INTO sessions(subject_id, planned_minutes) VALUES (?1, ?2)",
         (subject_id, planned_minutes),
     )?;
-    let id = db.conn().last_insert_rowid();
-
-    let mut cards = due;
-    cards.extend(fresh);
+    let id = tx.last_insert_rowid();
+    for (position, card) in cards.iter().enumerate() {
+        tx.execute(
+            "INSERT INTO session_cards(session_id, position, card_id) VALUES (?1, ?2, ?3)",
+            (id, position as i64, card.card.id),
+        )?;
+    }
+    tx.commit()?;
 
     Ok(Session {
         id,
@@ -118,7 +127,29 @@ pub fn start_session(
         cards,
         due_count,
         new_count,
+        cards_done: 0,
     })
+}
+
+fn session_card_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Option<SessionCard>> {
+    let payload_json: String = row.get("payload_json")?;
+    let Ok(payload) = serde_json::from_str(&payload_json) else {
+        return Ok(None);
+    };
+    Ok(Some(SessionCard {
+        is_new: row.get::<_, i64>("fsrs_state")? == 0,
+        topic_title: row.get("topic_title")?,
+        subject_id: row.get("subject_id")?,
+        card: Card {
+            id: row.get("id")?,
+            note_id: row.get("note_id")?,
+            topic_id: row.get("topic_id")?,
+            payload,
+            is_preview: row.get::<_, i64>("is_preview")? != 0,
+            retired: row.get::<_, i64>("retired")? != 0,
+            created_at: row.get("created_at")?,
+        },
+    }))
 }
 
 /// Pick either due cards or new ones.
@@ -174,32 +205,79 @@ fn select_cards(
     );
 
     let mut stmt = db.conn().prepare(&sql)?;
-    let rows = stmt.query_map((subject_id, limit), |row| {
-        let payload_json: String = row.get("payload_json")?;
-        let Ok(payload) = serde_json::from_str(&payload_json) else {
-            return Ok(None);
-        };
-        Ok(Some(SessionCard {
-            is_new: row.get::<_, i64>("fsrs_state")? == 0,
-            topic_title: row.get("topic_title")?,
-            subject_id: row.get("subject_id")?,
-            card: Card {
-                id: row.get("id")?,
-                note_id: row.get("note_id")?,
-                topic_id: row.get("topic_id")?,
-                payload,
-                is_preview: row.get::<_, i64>("is_preview")? != 0,
-                retired: row.get::<_, i64>("retired")? != 0,
-                created_at: row.get("created_at")?,
-            },
-        }))
-    })?;
+    let rows = stmt.query_map((subject_id, limit), session_card_from_row)?;
 
     Ok(rows
         .collect::<rusqlite::Result<Vec<_>>>()?
         .into_iter()
         .flatten()
         .collect())
+}
+
+/// Resume an open session with its remaining cards in their original order.
+pub fn resume_session(db: &Db, session_id: i64) -> Result<Option<Session>> {
+    let session = db.conn().query_row(
+        "SELECT subject_id, planned_minutes, cards_done
+           FROM sessions
+          WHERE id = ?1 AND ended_at IS NULL",
+        [session_id],
+        |row| {
+            Ok((
+                row.get::<_, Option<i64>>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, i64>(2)?,
+            ))
+        },
+    );
+    let (subject_id, planned_minutes, cards_done) = match session {
+        Ok(value) => value,
+        Err(rusqlite::Error::QueryReturnedNoRows) => return Ok(None),
+        Err(err) => return Err(err.into()),
+    };
+
+    let mut stmt = db.conn().prepare(
+        "SELECT c.*, t.title AS topic_title, s.state AS fsrs_state,
+                COALESCE(m.subject_id, t.subject_id) AS subject_id
+           FROM session_cards sc
+           JOIN cards c ON c.id = sc.card_id
+           JOIN card_state s ON s.card_id = c.id
+           LEFT JOIN notes n ON n.id = c.note_id
+           LEFT JOIN materials m ON m.id = n.material_id
+           LEFT JOIN scheme_topics t ON t.id = c.topic_id
+          WHERE sc.session_id = ?1 AND sc.done = 0
+          ORDER BY sc.position",
+    )?;
+    let rows = stmt.query_map([session_id], session_card_from_row)?;
+    let cards = rows
+        .collect::<rusqlite::Result<Vec<_>>>()?
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+    let due_count = cards.iter().filter(|card| !card.is_new).count() as i64;
+    let new_count = cards.iter().filter(|card| card.is_new).count() as i64;
+
+    Ok(Some(Session {
+        id: session_id,
+        subject_id,
+        planned_minutes,
+        cards,
+        due_count,
+        new_count,
+        cards_done,
+    }))
+}
+
+/// Close open sessions that have been left behind for too long.
+pub fn close_stale_sessions(db: &Db, max_age_hours: i64) -> Result<usize> {
+    let modifier = format!("-{} hours", max_age_hours.max(0));
+    let changed = db.conn().execute(
+        "UPDATE sessions
+            SET ended_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+          WHERE ended_at IS NULL
+            AND started_at <= strftime('%Y-%m-%dT%H:%M:%fZ','now', ?1)",
+        [modifier],
+    )?;
+    Ok(changed)
 }
 
 /// Read a card's current scheduling state.
@@ -288,6 +366,11 @@ pub fn grade(
         tx.execute(
             "UPDATE sessions SET cards_done = cards_done + 1 WHERE id = ?1",
             [session_id],
+        )?;
+        tx.execute(
+            "UPDATE session_cards SET done = 1
+               WHERE session_id = ?1 AND card_id = ?2",
+            (session_id, card_id),
         )?;
     }
     tx.commit()?;

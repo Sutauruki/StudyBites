@@ -755,6 +755,92 @@ fn a_session_respects_its_new_card_limit() {
 }
 
 #[test]
+fn an_open_session_resumes_remaining_cards_in_order() {
+    let mut db = db();
+    let subject = subjects::create(&db, "MTH 101").unwrap();
+    let topic = topics::create(
+        &db,
+        &NewTopic {
+            subject_id: subject.id,
+            title: "Sets".into(),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let content = DistilledNote {
+        title: "Sets".into(),
+        key_ideas: vec!["A set has no duplicates".into()],
+        ..Default::default()
+    };
+    let note = library::note_create(
+        &db,
+        None,
+        Some(topic.id),
+        &content,
+        &LexicalEmbedder.embed("sets"),
+        false,
+    )
+    .unwrap();
+    let cards: Vec<_> = (0..5)
+        .map(|i| GeneratedCard::Flash {
+            front: format!("Question {i}"),
+            back: format!("Answer {i}"),
+        })
+        .collect();
+    library::cards_create(&mut db, note.id, Some(topic.id), &cards, false).unwrap();
+
+    let session = study::start_session(&mut db, Some(subject.id), 10, 5).unwrap();
+    assert_eq!(session.cards.len(), 5);
+    study::grade(
+        &mut db,
+        Some(session.id),
+        session.cards[0].card.id,
+        Rating::Good,
+        100,
+    )
+    .unwrap();
+    study::grade(
+        &mut db,
+        Some(session.id),
+        session.cards[1].card.id,
+        Rating::Good,
+        100,
+    )
+    .unwrap();
+
+    let resumed = study::resume_session(&db, session.id).unwrap().unwrap();
+    assert_eq!(resumed.cards_done, 2);
+    assert_eq!(
+        resumed.cards.iter().map(|card| card.card.id).collect::<Vec<_>>(),
+        session.cards[2..]
+            .iter()
+            .map(|card| card.card.id)
+            .collect::<Vec<_>>()
+    );
+
+    study::end_session(&db, session.id).unwrap();
+    assert!(study::resume_session(&db, session.id).unwrap().is_none());
+}
+
+#[test]
+fn stale_session_cleanup_only_closes_old_open_sessions() {
+    let mut db = db();
+    let subject = subjects::create(&db, "MTH 101").unwrap();
+    let old = study::start_session(&mut db, Some(subject.id), 10, 0).unwrap();
+    let recent = study::start_session(&mut db, Some(subject.id), 10, 0).unwrap();
+    db.conn()
+        .execute(
+            "UPDATE sessions SET started_at = strftime('%Y-%m-%dT%H:%M:%fZ','now','-13 hours') WHERE id = ?1",
+            [old.id],
+        )
+        .unwrap();
+
+    assert_eq!(study::close_stale_sessions(&db, 12).unwrap(), 1);
+    assert!(study::resume_session(&db, old.id).unwrap().is_none());
+    assert!(study::resume_session(&db, recent.id).unwrap().is_some());
+}
+
+#[test]
 fn material_status_and_duplicate_detection() {
     let db = db();
     let subject = subjects::create(&db, "MTH 101").unwrap();
