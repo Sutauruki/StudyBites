@@ -431,3 +431,13 @@ the file directly instead of uploading a zipped Actions artifact.
 `Screen` provides a full-height, contained scrolling body and a safe-area-aware
 footer. Gates, study, CBT, and dialogs use it so primary actions stay above
 the phone navigation bar and keyboard without changing desktop layout.
+
+### D38. Android study recovery uses database card rows plus a short local snapshot
+
+Each session records its ordered cards and completion state in `session_cards`.
+The database is authoritative for which cards remain, while a versioned,
+12-hour localStorage snapshot preserves the screen, timer, reveal choice and
+typed draft. The countdown pauses while the document is hidden, and open
+sessions older than 12 hours are closed at startup. Other screens with unsaved
+local state remain follow-ups: upload dialogs, scheme editing, settings forms,
+and CBT answers.

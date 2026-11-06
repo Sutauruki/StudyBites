@@ -2,7 +2,7 @@
 
 Status markers: [ ] not started, [~] in progress, [x] complete.
 
-1. [ ] Keep app state when Android backgrounds or kills the app (bug fix)
+1. [~] Keep app state when Android backgrounds or kills the app (bug fix)
 2. [ ] Photo upload of the student's own notes (diagram crops kept)
 3. [ ] Do Not Disturb during study sessions (Android app only)
 4. [ ] Report a bug in Settings (email with screenshots via a small Cloudflare Worker)

@@ -174,6 +174,12 @@ wrapper that locks the database and forwards calls.
 5. When the time is up the session ends with a short summary. Tomorrow, what
    you studied comes back when it is due.
 
+StudyBites saves the current screen and in-progress study bite locally. If
+Android backgrounds or kills the app, reopening within 12 hours returns you
+to the same bite, card, timer, reveal state and written draft. The countdown
+does not spend time while the app is hidden. Sessions left open for more than
+12 hours are closed automatically.
+
 During a session: **Space** reveals, **1–4** grade (Again / Hard / Good / Easy),
 **Esc** ends.
 
