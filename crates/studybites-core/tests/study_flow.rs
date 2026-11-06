@@ -811,7 +811,11 @@ fn an_open_session_resumes_remaining_cards_in_order() {
     let resumed = study::resume_session(&db, session.id).unwrap().unwrap();
     assert_eq!(resumed.cards_done, 2);
     assert_eq!(
-        resumed.cards.iter().map(|card| card.card.id).collect::<Vec<_>>(),
+        resumed
+            .cards
+            .iter()
+            .map(|card| card.card.id)
+            .collect::<Vec<_>>(),
         session.cards[2..]
             .iter()
             .map(|card| card.card.id)
