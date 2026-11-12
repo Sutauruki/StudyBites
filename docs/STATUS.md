@@ -26,6 +26,38 @@ READY FOR NEXT: yes
 === END REPORT ===
 
 === STUDYBITES HANDOFF REPORT ===
+Task: D — Photo upload | Status: partly done
+Branch and last commit: ccr-cd109432-nnvymz b03571f | CI: not run
+1. What I did (one line per change):
+ - Edited: Cargo.lock, README.md, crates/studybites-core/Cargo.toml, crates/studybites-core/src/ai.rs, crates/studybites-core/src/files.rs, crates/studybites-core/src/ingest.rs, crates/studybites-core/src/jobs.rs, crates/studybites-core/src/library.rs, crates/studybites-core/src/migrations.rs, crates/studybites-core/src/prompts.rs, crates/studybites-core/src/providers.rs, crates/studybites-core/tests/pipeline.rs, crates/studybites-core/tests/storage.rs, crates/studybites-core/tests/study_flow.rs, docs/DECISIONS.md, docs/ROADMAP.md, src-tauri/Cargo.toml, src-tauri/src/lib.rs, src-tauri/src/phase2.rs, src-tauri/src/worker.rs, src/api/mock.ts, src/api/tauri.ts, src/api/types.ts, src/routes/HomePage.tsx, src/routes/SubjectPage.tsx, src/routes/UploadDialog.tsx, src/styles/app.css: added encrypted per-page photo storage, background transcription, student review/confirmation and student-notes distillation; updated mocks, documentation, and tests.
+ - New: src/lib/image.ts: resize photos locally to JPEG.
+ - New: src/routes/PhotoReviewDialog.tsx: edit transcripts and mark diagram rectangles.
+ - Roadmap item 2 remains [~] pending device verification.
+2. Checks I ran (command and result):
+ - cargo test -p studybites-core: PASSED
+ - cargo check --workspace --all-targets: PASSED
+ - cargo clippy --workspace --all-targets -- -D warnings: PASSED
+ - cargo fmt --all --check: PASSED
+ - npm run typecheck; npm run build:web: PASSED
+ - git diff --check: PASSED
+ - Frontend tests: NOT RUN (no test script or runner is configured).
+ - Failures: none.
+3. Not verified:
+ - Acceptance checklist: (1) photo picker, thumbnails and reorder; (2) offline upload/waiting UI; (3) live Gemini transcription; (4) highlighted/editable [?] words; (5) notes/cards and labels on device; (6) no-image-provider pause UI; (7) duplicate upload behavior on device; (8) existing PDF/DOCX UI flow on device; (9) Needs review persistence across leaving/reopening. Core tests cover duplicate, provider pause, and existing DOCX extraction; device behavior remains not verified.
+4. Where I changed or went beyond the prompt, and why:
+ - Added material_page_image_get so review can display the encrypted page; deletion also preserves cold files still referenced elsewhere. Design recorded in D39.
+5. Problems, risks and anything I guessed:
+ - Live provider requests and Android picker behavior were not tested; no real API key was used.
+6. What the developer must do or test now (device checklist, secrets, settings):
+ - On Android: pick 3 photos, reorder, upload offline, then connect a Gemini key and verify transcription, editing/diagram marking, confirmed notes/cards, clear no-vision pause, duplicate re-upload, PDF/DOCX upload, and Needs review persistence after leaving/reopening.
+7. What is left:
+ - Remaining parts of this task: nine-item device acceptance checklist above.
+ - Roadmap status: item 1 [~], item 2 [~], item 11 [~]; all other items [ ].
+ - Suggested next step: continue to Task E; return to the device checklist before marking item 2 complete.
+READY FOR NEXT: yes
+=== END REPORT ===
+
+=== STUDYBITES HANDOFF REPORT ===
 Task: C — Android app-state recovery | Status: done
 Branch and last commit: ccr-cd109432-nnvymz 2ce8193 | CI: not run
 1. What I did (one line per change):
