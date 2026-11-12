@@ -1,6 +1,6 @@
 //! Provider implementations and the fallback router (Brief 7).
 //!
-//! All three providers speak JSON over HTTPS and differ mainly in URL shape
+//! All providers speak JSON over HTTPS and differ mainly in URL shape
 //! and where the key goes, so one `chat()` per provider is enough; everything
 //! above it is shared.
 //!
@@ -165,6 +165,15 @@ pub fn classify_for(error: HttpError, model: &str) -> AiError {
     }
 }
 
+fn classify_for_provider(error: HttpError, provider: ProviderId, model: &str) -> AiError {
+    match (provider, error) {
+        (ProviderId::Deepseek, HttpError::Status { code: 402, .. }) => {
+            AiError::QuotaExhausted { until: None }
+        }
+        (_, error) => classify_for(error, model),
+    }
+}
+
 /// Providers rarely give a machine-readable reset time, so this is best
 /// effort; `None` leaves the caller to decide when to try again.
 fn retry_after_from_body(body: &str) -> Option<String> {
@@ -180,10 +189,11 @@ struct Chat<'a> {
     http: &'a dyn Http,
     api_key: &'a str,
     model: &'a str,
+    provider: ProviderId,
 }
 
 impl Chat<'_> {
-    /// OpenAI-compatible chat completions, used by Groq and OpenRouter.
+    /// OpenAI-compatible chat completions, used by Groq, OpenRouter, and DeepSeek.
     fn openai_style(
         &self,
         url: &str,
@@ -218,7 +228,7 @@ impl Chat<'_> {
         system: &str,
         user_content: serde_json::Value,
     ) -> std::result::Result<String, AiError> {
-        let body = serde_json::json!({
+        let mut body = serde_json::json!({
             "model": self.model,
             "messages": [
                 {"role": "system", "content": system},
@@ -227,6 +237,9 @@ impl Chat<'_> {
             "temperature": 0.2,
             "response_format": {"type": "json_object"},
         });
+        if self.provider == ProviderId::Deepseek {
+            body["thinking"] = serde_json::json!({"type": "disabled"});
+        }
         let headers = vec![
             (
                 "Authorization".to_string(),
@@ -238,7 +251,7 @@ impl Chat<'_> {
         let raw = self
             .http
             .post_json(url, &headers, &body)
-            .map_err(classify)?;
+            .map_err(|error| classify_for_provider(error, self.provider, self.model))?;
         let parsed: serde_json::Value = serde_json::from_str(&raw)
             .map_err(|e| AiError::BadResponse(format!("response was not JSON: {e}")))?;
 
@@ -382,6 +395,7 @@ impl<'a> Provider<'a> {
             ProviderId::Gemini => "gemini-3.5-flash-lite",
             ProviderId::Groq => "openai/gpt-oss-20b",
             ProviderId::OpenRouter => "google/gemma-4-26b-a4b-it:free",
+            ProviderId::Deepseek => "deepseek-flash",
         }
     }
 
@@ -420,6 +434,10 @@ impl<'a> Provider<'a> {
                     || model.contains("qwen2.5-vl")
                     || model.contains("vision")
             }
+            ProviderId::Deepseek => matches!(
+                model.trim(),
+                "deepseek-flash" | "deepseek-v4-flash" | "deepseek-v4-flash-vision-exp"
+            ),
         }
     }
 
@@ -442,6 +460,7 @@ impl<'a> Provider<'a> {
             http: self.http,
             api_key: &self.api_key,
             model: &self.model,
+            provider: self.id,
         };
         match self.id {
             ProviderId::Gemini => chat.gemini_with(system, user, search),
@@ -455,6 +474,9 @@ impl<'a> Provider<'a> {
                 system,
                 user,
             ),
+            ProviderId::Deepseek => {
+                chat.openai_style("https://api.deepseek.com/chat/completions", system, user)
+            }
         }
     }
 }
@@ -494,6 +516,7 @@ impl AiProvider for Provider<'_> {
             http: self.http,
             api_key: &self.api_key,
             model: &self.model,
+            provider: self.id,
         };
         let raw = match self.id {
             ProviderId::Gemini => chat.gemini_image(
@@ -511,6 +534,13 @@ impl AiProvider for Provider<'_> {
             )?,
             ProviderId::OpenRouter => chat.openai_style_image(
                 "https://openrouter.ai/api/v1/chat/completions",
+                prompts::TRANSCRIBE_SYSTEM,
+                prompts::transcribe_user(),
+                image,
+                mime,
+            )?,
+            ProviderId::Deepseek => chat.openai_style_image(
+                "https://api.deepseek.com/chat/completions",
                 prompts::TRANSCRIBE_SYSTEM,
                 prompts::transcribe_user(),
                 image,
@@ -719,17 +749,25 @@ pub fn list_models(
             "https://api.groq.com/openai/v1/models".to_string(),
             vec![("Authorization".to_string(), format!("Bearer {api_key}"))],
         ),
-        // OpenRouter publishes this without a key.
-        ProviderId::OpenRouter => (
-            "https://openrouter.ai/api/v1/models".to_string(),
-            vec![("Accept".to_string(), "application/json".to_string())],
+        // OpenRouter publishes this without a key, but accepts one when
+        // validating a newly entered key from Settings.
+        ProviderId::OpenRouter => {
+            let mut headers = vec![("Accept".to_string(), "application/json".to_string())];
+            if !api_key.trim().is_empty() {
+                headers.push(("Authorization".to_string(), format!("Bearer {api_key}")));
+            }
+            ("https://openrouter.ai/api/v1/models".to_string(), headers)
+        }
+        ProviderId::Deepseek => (
+            "https://api.deepseek.com/models".to_string(),
+            vec![("Authorization".to_string(), format!("Bearer {api_key}"))],
         ),
     };
 
     // A null body means GET to the client the app supplies.
     let raw = http
         .post_json(&url, &headers, &serde_json::Value::Null)
-        .map_err(classify)?;
+        .map_err(|error| classify_for_provider(error, id, ""))?;
     let parsed: serde_json::Value = serde_json::from_str(&raw)
         .map_err(|e| AiError::BadResponse(format!("the model list was not JSON: {e}")))?;
 

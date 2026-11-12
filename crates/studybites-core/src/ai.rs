@@ -288,6 +288,7 @@ pub enum ProviderId {
     Gemini,
     Groq,
     OpenRouter,
+    Deepseek,
 }
 
 impl ProviderId {
@@ -296,6 +297,7 @@ impl ProviderId {
             Self::Gemini => "gemini",
             Self::Groq => "groq",
             Self::OpenRouter => "openrouter",
+            Self::Deepseek => "deepseek",
         }
     }
 
@@ -304,21 +306,23 @@ impl ProviderId {
             "gemini" => Some(Self::Gemini),
             "groq" => Some(Self::Groq),
             "openrouter" => Some(Self::OpenRouter),
+            "deepseek" => Some(Self::Deepseek),
             _ => None,
         }
     }
 
     /// Default priority: Gemini first, per the brief.
     pub fn default_order() -> Vec<Self> {
-        vec![Self::Gemini, Self::Groq, Self::OpenRouter]
+        vec![Self::Gemini, Self::Groq, Self::OpenRouter, Self::Deepseek]
     }
 
-    /// Where the user gets a free key, shown in Settings.
+    /// Where the user gets a key, shown in Settings.
     pub fn key_help_url(self) -> &'static str {
         match self {
             Self::Gemini => "https://aistudio.google.com/apikey",
             Self::Groq => "https://console.groq.com/keys",
             Self::OpenRouter => "https://openrouter.ai/keys",
+            Self::Deepseek => "https://platform.deepseek.com/api_keys",
         }
     }
 }

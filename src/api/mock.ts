@@ -879,11 +879,21 @@ export const mockBackend: Backend = {
         defaultModel: "google/gemma-4-26b-a4b-it:free",
         selectedModel: "google/gemma-4-26b-a4b-it:free",
       },
+      {
+        id: "deepseek",
+        label: "DeepSeek",
+        configured: false,
+        helpUrl: "https://platform.deepseek.com/api_keys",
+        defaultModel: "deepseek-flash",
+        selectedModel: "deepseek-flash",
+      },
     ]),
   providerKeySet: () =>
     Promise.reject(
       "Keys are stored in secure device storage, which the browser preview has no access to.",
     ),
+  providerKeyTest: () =>
+    Promise.reject("Testing a provider key needs the desktop app, not the browser preview."),
   providerModels: () =>
     Promise.reject("Listing models needs the desktop app — this is the browser preview."),
   providerModelSet: () => tick(undefined),

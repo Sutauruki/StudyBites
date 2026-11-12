@@ -153,10 +153,12 @@ wrapper that locks the database and forwards calls.
 ### First run
 
 1. **Create a subject** for one of your courses.
-2. **Add an AI key** in Settings. StudyBites uses your own free key — Gemini is
-   tried first, with Groq and OpenRouter as fallbacks when a daily limit is
-   reached. Settings links straight to where each one is issued. Keys go into
-   Windows' credential store, never into the app's database.
+2. **Add an AI key** in Settings. StudyBites uses your own key — Google Gemini
+   is tried first, followed by Groq, OpenRouter and DeepSeek when a provider
+   reaches a daily limit. Settings links to each provider and can test a pasted
+   key before saving it. Keys stay in platform-secure storage and are never
+   returned to the UI. DeepSeek is low cost, but Gemini remains the preferred
+   photo transcription provider until handwriting quality is compared.
 3. Optionally **sketch the scheme of work** for the subject: topics, subtopics
    and week numbers. You can skip this and add topics as you go.
 

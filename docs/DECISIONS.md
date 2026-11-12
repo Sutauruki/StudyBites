@@ -471,3 +471,21 @@ locally, the encrypted database outbox retries reports while offline, and the
 Worker sends email without persisting report content. The Resend test sender
 is temporary; public launch needs a verified sender or Cloudflare Email
 Service.
+
+### D42. DeepSeek is a BYO-key fallback, with Flash for vision
+
+The [Chat Completions docs](https://api-docs.deepseek.com/api/create-chat-completion)
+confirm `https://api.deepseek.com/chat/completions`, Bearer authentication,
+JSON output, and `thinking: {"type":"disabled"}`. The [vision guide](https://api-docs.deepseek.com/guides/vision)
+confirms OpenAI-compatible base64 image blocks and that Flash supports vision,
+while Pro does not. The retired Flash aliases remain accepted, though the
+pricing page says they are retired and served by the current Flash model.
+
+The [error table](https://api-docs.deepseek.com/quick_start/error_codes)
+confirms 401 authentication, 402 insufficient balance, 429 rate limits, and
+500/503 transient service errors; it also lists 400 format and 422 parameter
+errors. The [pricing page](https://api-docs.deepseek.com/quick_start/pricing)
+confirms $0.15/M cache-miss input and $0.60/M output off-peak, double at peak;
+cache-hit input is cheaper. Gemini remains first in the existing order and is
+still preferred for photo transcription pending a handwriting-quality
+comparison.

@@ -294,6 +294,8 @@ struct FakeHttp {
     responses: std::sync::Mutex<Vec<std::result::Result<String, HttpError>>>,
     calls: std::sync::Mutex<usize>,
     bodies: std::sync::Mutex<Vec<serde_json::Value>>,
+    urls: std::sync::Mutex<Vec<String>>,
+    headers: std::sync::Mutex<Vec<Vec<(String, String)>>>,
 }
 
 impl FakeHttp {
@@ -302,6 +304,8 @@ impl FakeHttp {
             responses: std::sync::Mutex::new(responses),
             calls: std::sync::Mutex::new(0),
             bodies: std::sync::Mutex::new(Vec::new()),
+            urls: std::sync::Mutex::new(Vec::new()),
+            headers: std::sync::Mutex::new(Vec::new()),
         }
     }
     fn calls(&self) -> usize {
@@ -311,17 +315,30 @@ impl FakeHttp {
     fn body(&self, index: usize) -> serde_json::Value {
         self.bodies.lock().unwrap()[index].clone()
     }
+
+    fn url(&self, index: usize) -> String {
+        self.urls.lock().unwrap()[index].clone()
+    }
+
+    fn header(&self, index: usize, name: &str) -> Option<String> {
+        self.headers.lock().unwrap()[index]
+            .iter()
+            .find(|(key, _)| key.eq_ignore_ascii_case(name))
+            .map(|(_, value)| value.clone())
+    }
 }
 
 impl Http for FakeHttp {
     fn post_json(
         &self,
-        _url: &str,
-        _headers: &[(String, String)],
+        url: &str,
+        headers: &[(String, String)],
         body: &serde_json::Value,
     ) -> std::result::Result<String, HttpError> {
         *self.calls.lock().unwrap() += 1;
         self.bodies.lock().unwrap().push(body.clone());
+        self.urls.lock().unwrap().push(url.to_string());
+        self.headers.lock().unwrap().push(headers.to_vec());
         let mut responses = self.responses.lock().unwrap();
         if responses.is_empty() {
             return Err(HttpError::Transport("no more canned responses".into()));
@@ -535,6 +552,132 @@ fn configured_vision_providers_receive_the_expected_multimodal_payload() {
             "data:image/jpeg;base64,{}",
             base64::Engine::encode(&base64::engine::general_purpose::STANDARD, image)
         )
+    );
+}
+
+#[test]
+fn deepseek_text_requests_use_the_selected_model_and_disable_thinking() {
+    let http = FakeHttp::new(vec![Ok(openai_body("a short explanation"))]);
+    let provider = Provider::new(ProviderId::Deepseek, "deepseek-key".into(), &http)
+        .with_model("deepseek-v4-pro");
+    studybites_core::AiProvider::explain(&provider, "why?", &[]).unwrap();
+
+    assert_eq!(http.url(0), "https://api.deepseek.com/chat/completions");
+    assert_eq!(
+        http.header(0, "Authorization").as_deref(),
+        Some("Bearer deepseek-key")
+    );
+    let request = http.body(0);
+    assert_eq!(request["model"], "deepseek-v4-pro");
+    assert_eq!(request["thinking"]["type"], "disabled");
+    assert_eq!(request["response_format"]["type"], "json_object");
+}
+
+#[test]
+fn deepseek_flash_sends_images_as_openai_compatible_data_urls() {
+    let image = b"\xff\xd8\xffexample image";
+    let response = Ok(openai_body(
+        r#"{"text":"wording","uncertain":[],"blank":false}"#,
+    ));
+    let http = FakeHttp::new(vec![response.clone(), response.clone(), response]);
+    let models = [
+        "deepseek-flash",
+        "deepseek-v4-flash",
+        "deepseek-v4-flash-vision-exp",
+    ];
+    for model in models {
+        let provider = Provider::new(ProviderId::Deepseek, "key".into(), &http).with_model(model);
+        studybites_core::AiProvider::transcribe_page(&provider, image, "image/jpeg").unwrap();
+    }
+
+    let request = http.body(0);
+    let content = request["messages"][1]["content"].as_array().unwrap();
+    assert_eq!(content[1]["type"], "image_url");
+    assert_eq!(
+        content[1]["image_url"]["url"],
+        format!(
+            "data:image/jpeg;base64,{}",
+            base64::Engine::encode(&base64::engine::general_purpose::STANDARD, image)
+        )
+    );
+    assert_eq!(request["thinking"]["type"], "disabled");
+    for (index, model) in models.into_iter().enumerate() {
+        assert_eq!(http.body(index)["model"], model);
+    }
+}
+
+#[test]
+fn deepseek_pro_refuses_images_without_making_a_request() {
+    let http = FakeHttp::new(vec![]);
+    let provider =
+        Provider::new(ProviderId::Deepseek, "key".into(), &http).with_model("deepseek-v4-pro");
+    let error = studybites_core::AiProvider::transcribe_page(&provider, b"image", "image/jpeg")
+        .expect_err("DeepSeek Pro does not accept images");
+
+    assert!(matches!(error, AiError::Unsupported(_)));
+    assert_eq!(http.calls(), 0);
+}
+
+#[test]
+fn deepseek_pro_image_unsupported_falls_through_to_gemini() {
+    let deepseek_http = FakeHttp::new(vec![]);
+    let gemini_http = FakeHttp::new(vec![Ok(gemini_body(
+        r#"{"text":"Notes text","uncertain":[],"blank":false}"#,
+    ))]);
+    let list = vec![
+        Provider::new(ProviderId::Deepseek, "deepseek-key".into(), &deepseek_http)
+            .with_model("deepseek-v4-pro"),
+        Provider::new(ProviderId::Gemini, "gemini-key".into(), &gemini_http),
+    ];
+
+    let (used, transcript) = providers::route(&list, &|_| true, |provider| {
+        studybites_core::AiProvider::transcribe_page(provider, b"\xff\xd8\xff", "image/jpeg")
+    })
+    .expect("an image-capable provider should be tried next");
+
+    assert_eq!(used, ProviderId::Gemini);
+    assert_eq!(transcript.text, "Notes text");
+    assert_eq!(deepseek_http.calls(), 0);
+    assert_eq!(gemini_http.calls(), 1);
+}
+
+#[test]
+fn deepseek_maps_auth_credit_rate_and_server_errors() {
+    let cases = [
+        (401, "auth"),
+        (402, "quota"),
+        (429, "quota"),
+        (503, "transient"),
+    ];
+    for (status, expected) in cases {
+        let http = FakeHttp::new(vec![Err(HttpError::Status {
+            code: status,
+            body: String::new(),
+        })]);
+        let provider = Provider::new(ProviderId::Deepseek, "key".into(), &http);
+        let error = studybites_core::AiProvider::explain(&provider, "why?", &[])
+            .expect_err("the canned HTTP error should be classified");
+        match expected {
+            "auth" => assert!(matches!(error, AiError::Auth(_))),
+            "quota" => assert!(matches!(error, AiError::QuotaExhausted { .. })),
+            "transient" => assert!(matches!(error, AiError::Transient(_))),
+            _ => unreachable!(),
+        }
+    }
+}
+
+#[test]
+fn deepseek_model_list_uses_the_authenticated_models_endpoint() {
+    let http = FakeHttp::new(vec![Ok(
+        serde_json::json!({"data": [{"id": "deepseek-flash"}]}).to_string(),
+    )]);
+    let models = providers::list_models(&http, ProviderId::Deepseek, "deepseek-key").unwrap();
+
+    assert_eq!(models, vec!["deepseek-flash"]);
+    assert_eq!(http.url(0), "https://api.deepseek.com/models");
+    assert_eq!(
+        http.header(0, "Authorization").as_deref(),
+        Some("Bearer deepseek-key")
     );
 }
 

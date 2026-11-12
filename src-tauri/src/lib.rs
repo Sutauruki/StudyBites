@@ -94,6 +94,7 @@ pub fn run() {
             phase2::providers_list,
             phase2::provider_key_set,
             phase2::provider_models,
+            phase2::provider_key_test,
             phase2::provider_model_set,
             phase2::github_token_set,
             phase2::github_token_present,

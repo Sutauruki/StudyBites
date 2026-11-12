@@ -21,8 +21,14 @@ and offline study use no AI and are uncapped.
 
 ## AI
 
+- The BYO-key providers are Google Gemini, Groq, OpenRouter, and DeepSeek. The
+  existing default order remains Gemini, Groq, OpenRouter, then DeepSeek.
 - Gemini 2.5 Flash-Lite is the cost target for photo transcription, notes, normal tutor work, and marking.
 - Gemini 2.5 Flash is for harder smart questions; thinking is low.
+- DeepSeek V4.1 Flash costs about $0.15 per million cache-miss input tokens and
+  $0.60 per million output tokens off-peak, double at peak; cache-hit input is
+  cheaper. Gemini stays preferred for photo transcription until handwriting
+  quality has been compared.
 - Managed plans use a paid key. Model names remain settings because Google retires models.
 - A bought key never ships in the app. It lives as a Cloudflare Worker secret, and the app calls the Worker with the activation code.
 

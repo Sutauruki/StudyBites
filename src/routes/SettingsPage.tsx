@@ -304,6 +304,8 @@ function KeyRow({
   const [models, setModels] = useState<string[] | null>(null);
   const [loadingModels, setLoadingModels] = useState(false);
   const [selectedModel, setSelectedModel] = useState(provider.selectedModel);
+  const [testingKey, setTestingKey] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
 
   useEffect(() => {
     setSelectedModel(provider.selectedModel);
@@ -346,9 +348,12 @@ function KeyRow({
         )}
         <span aria-hidden="true">·</span>
         <button className="link" onClick={() => void backend.openUrl(provider.helpUrl)}>
-          Get a free key
+          Get a key
         </button>
       </div>
+      {provider.id === "deepseek" && (
+        <p className="muted">Low cost. Your notes are sent to DeepSeek.</p>
+      )}
 
       {/* Models are listed by the provider itself, so a retired one can
           always be swapped without waiting for a new build. */}
@@ -414,17 +419,43 @@ function KeyRow({
           value={value}
           placeholder={provider.configured ? "Replace key…" : "Paste key…"}
           autoComplete="off"
-          onChange={(e) => setValue(e.target.value)}
+          disabled={testingKey}
+          onChange={(e) => {
+            setValue(e.target.value);
+            setTestResult(null);
+          }}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !busy) void save();
           }}
         />
-        <button className="btn" onClick={save} disabled={busy || !value.trim()}>
+        <button
+          className="btn"
+          onClick={async () => {
+            setTestingKey(true);
+            setTestResult(null);
+            try {
+              const models = await backend.providerKeyTest(provider.id, value);
+              setTestResult({
+                ok: true,
+                message: `Key works. ${models.length} models are available.`,
+              });
+            } catch (err) {
+              setTestResult({ ok: false, message: errorText(err) });
+            } finally {
+              setTestingKey(false);
+            }
+          }}
+          disabled={testingKey || busy || !value.trim()}
+        >
+          {testingKey ? "Testing…" : "Test key"}
+        </button>
+        <button className="btn" onClick={save} disabled={busy || testingKey || !value.trim()}>
           {saved ? "Saved" : "Save"}
         </button>
         {provider.configured && (
           <button
             className="btn btn--danger"
+            disabled={testingKey}
             onClick={async () => {
               try {
                 await backend.providerKeySet(provider.id, "");
@@ -438,6 +469,7 @@ function KeyRow({
           </button>
         )}
       </div>
+      {testResult && <Banner kind={testResult.ok ? "info" : "error"}>{testResult.message}</Banner>}
     </div>
   );
 }

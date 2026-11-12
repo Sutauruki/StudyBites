@@ -219,8 +219,17 @@ fn provider_ids_round_trip() {
         assert!(id.key_help_url().starts_with("https://"));
     }
     assert_eq!(ProviderId::parse(" GEMINI "), Some(ProviderId::Gemini));
+    assert_eq!(ProviderId::parse("DeepSeek"), Some(ProviderId::Deepseek));
     assert_eq!(ProviderId::parse("chatgpt"), None);
-    assert_eq!(ProviderId::default_order()[0], ProviderId::Gemini);
+    assert_eq!(
+        ProviderId::default_order(),
+        vec![
+            ProviderId::Gemini,
+            ProviderId::Groq,
+            ProviderId::OpenRouter,
+            ProviderId::Deepseek
+        ]
+    );
 }
 
 #[test]
@@ -236,6 +245,10 @@ fn providers_have_recommended_models_by_default() {
     assert_eq!(
         Provider::default_model(ProviderId::OpenRouter),
         "google/gemma-4-26b-a4b-it:free"
+    );
+    assert_eq!(
+        Provider::default_model(ProviderId::Deepseek),
+        "deepseek-flash"
     );
 }
 

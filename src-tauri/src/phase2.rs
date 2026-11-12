@@ -864,6 +864,7 @@ pub fn providers_list(state: State<AppState>) -> Ipc<Vec<ProviderInfo>> {
                     ProviderId::Gemini => "Google Gemini".into(),
                     ProviderId::Groq => "Groq".into(),
                     ProviderId::OpenRouter => "OpenRouter".into(),
+                    ProviderId::Deepseek => "DeepSeek".into(),
                 },
                 configured: configured.contains(&id),
                 help_url: id.key_help_url().to_string(),
@@ -887,6 +888,24 @@ pub async fn provider_models(state: State<'_, AppState>, provider: String) -> Ip
         return Err("Add this provider's key first, then its models can be listed.".into());
     }
     studybites_core::providers::list_models(&UreqGetHttp, id, &key).map_err(|e| e.to_string())
+}
+
+/// Check a newly entered provider key without saving it.
+#[tauri::command]
+pub async fn provider_key_test(
+    state: State<'_, AppState>,
+    provider: String,
+    key: String,
+) -> Ipc<Vec<String>> {
+    let id = ProviderId::parse(&provider).ok_or("that is not a provider StudyBites knows")?;
+    {
+        let _db = lock(&state)?;
+    }
+    let key = key.trim();
+    if key.is_empty() {
+        return Err("Paste a key to test it.".into());
+    }
+    studybites_core::providers::list_models(&UreqGetHttp, id, key).map_err(|e| e.to_string())
 }
 
 /// Choose which model a provider should use.

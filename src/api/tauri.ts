@@ -136,6 +136,8 @@ export const tauriBackend: Backend = {
     await invoke("provider_key_set", { provider, key });
     await invoke("queue_wake");
   },
+  providerKeyTest: (provider, key) =>
+    invoke<string[]>("provider_key_test", { provider, key }),
   providerModels: (provider) => invoke("provider_models", { provider }),
   providerModelSet: async (provider, model) => {
     await invoke("provider_model_set", { provider, model });
