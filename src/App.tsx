@@ -231,7 +231,10 @@ export function App() {
               subjectId={view.subjectId}
               minutes={view.minutes}
               resume={resume?.view.name === "study" ? resume.study : undefined}
-              onDone={() => setView({ name: "home" })}
+              onDone={() => {
+                setResume(null);
+                setView({ name: "home" });
+              }}
             />
           )}
           {view.name === "cbt" && <CbtPage />}

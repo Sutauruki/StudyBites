@@ -24,3 +24,31 @@ Branch and last commit: ccr-cd109432-nnvymz e888584 | CI: not run
  - Suggested next step: continue the pending task; avoid rebuilding until needed.
 READY FOR NEXT: yes
 === END REPORT ===
+
+=== STUDYBITES HANDOFF REPORT ===
+Task: C — Android app-state recovery | Status: done
+Branch and last commit: ccr-cd109432-nnvymz 2ce8193 | CI: not run
+1. What I did (one line per change):
+ - crates/studybites-core/tests/storage.rs (edited): added an upgrade test applying the resumable-session migration to a populated pre-existing database.
+ - src/App.tsx (edited): clear the in-memory resume snapshot when a study session finishes; this pre-existing workspace edit was included with Task C.
+ - Existing Task C commits already contain the session_cards migration, Rust resume/stale-session logic, command and mock support, versioned local snapshot, README, D38, and roadmap update.
+2. Checks I ran (command and result):
+ - cargo test -p studybites-core: PASSED (all suites; 100 tests)
+ - npm run typecheck: PASSED
+ - npm run build:web: PASSED
+ - git diff --check: PASSED
+ - Failures: none
+3. Not verified:
+ - Android device checklist: background to WhatsApp, process swipe-away/reopen, and Developer options "Don't keep activities".
+4. Where I changed or went beyond the prompt, and why:
+ - Added an explicit populated-database migration test to cover the stated upgrade scenario.
+5. Problems, risks and anything I guessed:
+ - No frontend test runner is configured; Rust integration, typecheck, and production build checks passed.
+6. What the developer must do or test now (device checklist, secrets, settings):
+ - Verify on Android: start a 10-minute session and grade two cards; switch to WhatsApp and return; swipe away and reopen; repeat with "Don't keep activities". Confirm the same screen/card and timer are restored.
+7. What is left:
+ - Remaining parts of this task: Android device verification
+ - Roadmap status: item 1 [~], item 11 [~]; all other items 2-10 and 12-16 are [ ]
+ - Suggested next step: continue to Task D; retain the device checklist for validation.
+READY FOR NEXT: yes
+=== END REPORT ===
