@@ -19,8 +19,8 @@ fn migrations_bring_schema_to_current_version() {
         )
         .unwrap();
     assert_eq!(
-        tables, 15,
-        "the Section 5 tables, plus EULA acceptance, CBT, and resumable sessions"
+        tables, 16,
+        "the Section 5 tables, plus EULA acceptance, CBT, resumable sessions, and photo pages"
     );
 }
 
@@ -39,7 +39,7 @@ fn migrations_are_idempotent() {
 }
 
 #[test]
-fn resumable_session_migration_preserves_existing_data() {
+fn photo_page_migration_preserves_existing_data() {
     let mut conn = rusqlite::Connection::open_in_memory().unwrap();
     for (index, migration) in migrations::MIGRATIONS
         .iter()
@@ -57,26 +57,38 @@ fn resumable_session_migration_preserves_existing_data() {
         [],
     )
     .unwrap();
+    conn.execute(
+        "INSERT INTO materials(subject_id, original_filename, mime, size, sha256)
+         VALUES (1, 'week1.pdf', 'application/pdf', 100, 'abc')",
+        [],
+    )
+    .unwrap();
 
     migrations::migrate(&mut conn).unwrap();
 
     let subject_name: String = conn
-        .query_row("SELECT name FROM subjects WHERE id = 1", [], |row| row.get(0))
+        .query_row("SELECT name FROM subjects WHERE id = 1", [], |row| {
+            row.get(0)
+        })
         .unwrap();
     let session_count: i64 = conn
         .query_row("SELECT count(*) FROM sessions", [], |row| row.get(0))
         .unwrap();
-    let session_cards_exists: i64 = conn
+    let photo_pages_exists: i64 = conn
         .query_row(
-            "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'session_cards'",
+            "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'material_pages'",
             [],
             |row| row.get(0),
         )
         .unwrap();
+    let material_count: i64 = conn
+        .query_row("SELECT count(*) FROM materials", [], |row| row.get(0))
+        .unwrap();
 
     assert_eq!(subject_name, "MTH 101");
     assert_eq!(session_count, 1);
-    assert_eq!(session_cards_exists, 1);
+    assert_eq!(photo_pages_exists, 1);
+    assert_eq!(material_count, 1);
 }
 
 #[test]

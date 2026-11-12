@@ -178,6 +178,23 @@ pub const MIGRATIONS: &[&str] = &[
     );
     CREATE INDEX idx_session_cards_card ON session_cards(session_id, card_id);
     "#,
+    // ---- 006: pages for photo uploads -----------------------------------
+    r#"
+    CREATE TABLE material_pages (
+        id            INTEGER PRIMARY KEY,
+        material_id   INTEGER NOT NULL REFERENCES materials(id) ON DELETE CASCADE,
+        page_index    INTEGER NOT NULL,
+        sha256        TEXT NOT NULL,
+        cold_path     TEXT,
+        transcript    TEXT,
+        uncertain_json TEXT NOT NULL DEFAULT '[]',
+        diagrams_json TEXT NOT NULL DEFAULT '[]',
+        status        TEXT NOT NULL DEFAULT 'queued',
+        error         TEXT,
+        UNIQUE(material_id, page_index)
+    );
+    CREATE INDEX idx_material_pages_material ON material_pages(material_id, page_index);
+    "#,
 ];
 
 pub const SCHEMA_VERSION: i64 = MIGRATIONS.len() as i64;

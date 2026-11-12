@@ -146,17 +146,16 @@ export function HomePage({
         <section>
           <div className="spinner" />
           <p className="muted">
-            Reading {working} section{working === 1 ? "" : "s"} of your material. You can study
-            while it works.
+            Processing your material in the background. You can study while it works.
           </p>
         </section>
       )}
 
       {paused > 0 && (
         <Banner kind="info">
-          Daily AI limit reached — this picks up again after it resets
-          {queue?.resumesAt ? ` (${new Date(queue.resumesAt).toLocaleString()})` : ""}. Studying
-          works offline meanwhile.
+          {queue?.pausedReason ?? "Some material is paused."}
+          {queue?.resumesAt ? ` Resumes ${new Date(queue.resumesAt).toLocaleString()}.` : ""}
+          {" "}Studying works offline meanwhile.
         </Banner>
       )}
 

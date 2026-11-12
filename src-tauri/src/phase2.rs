@@ -6,6 +6,7 @@
 
 use crate::keys;
 use crate::state::{to_ipc, AppState, LOCK_FAILED};
+use base64::Engine as _;
 use std::sync::MutexGuard;
 use studybites_core::ai::{AiProvider, ProviderId, SchemeEntry, TopicMatch};
 use studybites_core::embed::{Embedder, LexicalEmbedder};
@@ -189,6 +190,27 @@ pub async fn material_upload_uri(
     material_upload_bytes(app, state, subject_id, topic_id, filename, bytes).await
 }
 
+#[tauri::command]
+pub fn material_upload_photos(
+    app: tauri::AppHandle,
+    state: State<AppState>,
+    subject_id: i64,
+    topic_id: Option<i64>,
+    pages: Vec<Vec<u8>>,
+) -> Ipc<ingest::Accepted> {
+    let app_data = state.app_data.clone();
+    let file_key = state.file_key();
+    let accepted = {
+        let mut db = lock(&state)?;
+        ingest::accept_photo_pages(&mut db, &app_data, &file_key, subject_id, topic_id, &pages)
+            .map_err(to_ipc)?
+    };
+    if accepted.duplicate_of.is_none() {
+        crate::worker::wake(&app);
+    }
+    Ok(accepted)
+}
+
 /// Read a file's text without storing anything, for the topic-match preview
 /// and for scheme-of-work parsing.
 #[tauri::command]
@@ -249,13 +271,80 @@ pub fn material_set_topic(
 pub fn material_delete(state: State<AppState>, id: i64) -> Ipc<()> {
     let app_data = state.app_data.clone();
     let db = lock(&state)?;
-    let cold = library::material_delete(&db, id).map_err(to_ipc)?;
-    if let Some(cold) = cold {
+    let cold_files = library::material_delete(&db, id).map_err(to_ipc)?;
+    for cold in cold_files {
         // A leftover file is untidy, not harmful, so this is not worth
         // failing the delete over.
-        let _ = files::cold_delete(&app_data, &cold);
+        if let Err(error) = files::cold_delete(&app_data, &cold) {
+            eprintln!("StudyBites could not remove a cold-stored material file: {error}");
+        }
     }
     Ok(())
+}
+
+#[tauri::command]
+pub fn material_pages_get(
+    state: State<AppState>,
+    material_id: i64,
+) -> Ipc<Vec<library::MaterialPage>> {
+    let db = lock(&state)?;
+    library::pages_for_material(&db, material_id).map_err(to_ipc)
+}
+
+#[tauri::command]
+pub fn material_page_image_get(state: State<AppState>, page_id: i64) -> Ipc<String> {
+    let app_data = state.app_data.clone();
+    let file_key = state.file_key();
+    let db = lock(&state)?;
+    let page = library::page_get(&db, page_id).map_err(to_ipc)?;
+    let cold_path = page
+        .cold_path
+        .ok_or("the stored photo is no longer available")?;
+    let bytes = files::cold_read(&app_data, &file_key, &cold_path).map_err(to_ipc)?;
+    Ok(base64::engine::general_purpose::STANDARD.encode(bytes))
+}
+
+#[tauri::command]
+pub fn material_page_text_set(
+    state: State<AppState>,
+    page_id: i64,
+    text: String,
+) -> Ipc<library::MaterialPage> {
+    if text.chars().count() > 20_000 {
+        return Err("A page transcript must be 20,000 characters or fewer.".into());
+    }
+    let db = lock(&state)?;
+    library::page_set_transcript(&db, page_id, &text).map_err(to_ipc)
+}
+
+#[tauri::command]
+pub fn material_diagrams_set(
+    state: State<AppState>,
+    page_id: i64,
+    rects_json: String,
+) -> Ipc<library::MaterialPage> {
+    let db = lock(&state)?;
+    library::diagrams_set(&db, page_id, &rects_json).map_err(to_ipc)
+}
+
+#[tauri::command]
+pub fn material_transcript_confirm(
+    app: tauri::AppHandle,
+    state: State<AppState>,
+    material_id: i64,
+) -> Ipc<usize> {
+    let chunks = {
+        let mut db = lock(&state)?;
+        ingest::confirm_transcript(&mut db, material_id).map_err(to_ipc)?
+    };
+    crate::worker::wake(&app);
+    Ok(chunks)
+}
+
+#[tauri::command]
+pub fn material_notes_get(state: State<AppState>, material_id: i64) -> Ipc<Vec<library::Note>> {
+    let db = lock(&state)?;
+    library::notes_for_material(&db, material_id).map_err(to_ipc)
 }
 
 /// Decompress and save the original file (Brief 3.10).
@@ -645,6 +734,7 @@ pub struct QueueStatus {
     pub quota: Vec<quota::Usage>,
     /// When paused work resumes, if it is waiting on a quota reset.
     pub resumes_at: Option<String>,
+    pub paused_reason: Option<String>,
 }
 
 #[tauri::command]
@@ -658,6 +748,7 @@ pub fn queue_status(state: State<AppState>) -> Ipc<QueueStatus> {
         counts: jobs::counts(&db).map_err(to_ipc)?,
         quota: quota::usage_today(&db).map_err(to_ipc)?,
         resumes_at: quota::next_reset(&db, &names).map_err(to_ipc)?,
+        paused_reason: jobs::paused_reason(&db).map_err(to_ipc)?,
     })
 }
 
@@ -752,6 +843,11 @@ pub fn provider_key_set(state: State<AppState>, provider: String, key: String) -
     let id = ProviderId::parse(&provider).ok_or("that is not a provider StudyBites knows")?;
     let db = lock(&state)?;
     keys::set_provider_key(&db, id, &key)
+}
+
+#[tauri::command]
+pub fn queue_wake(app: tauri::AppHandle) {
+    crate::worker::wake(&app);
 }
 
 #[tauri::command]

@@ -9,10 +9,11 @@
 //! a network or a key.
 
 use crate::ai::{
-    AiError, AiProvider, DistillRequest, DistilledNote, GeneratedCard, ProviderId, SchemeEntry,
-    TopicMatch, TopicPreview,
+    AiError, AiProvider, DistillRequest, DistilledNote, GeneratedCard, PageTranscript, ProviderId,
+    SchemeEntry, TopicMatch, TopicPreview,
 };
 use crate::{ai, prompts};
+use base64::Engine;
 use std::time::Duration;
 
 /// Requests are given a generous ceiling: a slow connection is normal, and a
@@ -169,11 +170,39 @@ impl Chat<'_> {
         system: &str,
         user: &str,
     ) -> std::result::Result<String, AiError> {
+        self.openai_style_content(url, system, serde_json::Value::String(user.to_string()))
+    }
+
+    fn openai_style_image(
+        &self,
+        url: &str,
+        system: &str,
+        user: &str,
+        image: &[u8],
+        mime: &str,
+    ) -> std::result::Result<String, AiError> {
+        let encoded = base64::engine::general_purpose::STANDARD.encode(image);
+        let content = serde_json::json!([
+            {"type": "text", "text": user},
+            {
+                "type": "image_url",
+                "image_url": {"url": format!("data:{mime};base64,{encoded}")}
+            }
+        ]);
+        self.openai_style_content(url, system, content)
+    }
+
+    fn openai_style_content(
+        &self,
+        url: &str,
+        system: &str,
+        user_content: serde_json::Value,
+    ) -> std::result::Result<String, AiError> {
         let body = serde_json::json!({
             "model": self.model,
             "messages": [
                 {"role": "system", "content": system},
-                {"role": "user", "content": user},
+                {"role": "user", "content": user_content},
             ],
             "temperature": 0.2,
             "response_format": {"type": "json_object"},
@@ -262,6 +291,58 @@ impl Chat<'_> {
             .map(|s| s.to_string())
             .ok_or_else(|| AiError::BadResponse("response had no text".into()))
     }
+
+    fn gemini_image(
+        &self,
+        system: &str,
+        user: &str,
+        image: &[u8],
+        mime: &str,
+    ) -> std::result::Result<String, AiError> {
+        let encoded = base64::engine::general_purpose::STANDARD.encode(image);
+        let url = format!(
+            "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent",
+            self.model
+        );
+        let body = serde_json::json!({
+            "systemInstruction": {"parts": [{"text": system}]},
+            "contents": [{
+                "role": "user",
+                "parts": [
+                    {"text": user},
+                    {"inline_data": {"mime_type": mime, "data": encoded}}
+                ]
+            }],
+            "generationConfig": {
+                "temperature": 0.0,
+                "responseMimeType": "application/json"
+            }
+        });
+        let headers = vec![
+            ("x-goog-api-key".to_string(), self.api_key.to_string()),
+            ("Content-Type".to_string(), "application/json".to_string()),
+        ];
+        let raw = self
+            .http
+            .post_json(&url, &headers, &body)
+            .map_err(|error| classify_for(error, self.model))?;
+        let parsed: serde_json::Value = serde_json::from_str(&raw)
+            .map_err(|e| AiError::BadResponse(format!("response was not JSON: {e}")))?;
+        if parsed
+            .pointer("/candidates/0/finishReason")
+            .and_then(|value| value.as_str())
+            .is_some_and(|reason| reason == "SAFETY" || reason == "PROHIBITED_CONTENT")
+        {
+            return Err(AiError::BadResponse(
+                "the provider declined to answer for this material".into(),
+            ));
+        }
+        parsed
+            .pointer("/candidates/0/content/parts/0/text")
+            .and_then(|value| value.as_str())
+            .map(str::to_string)
+            .ok_or_else(|| AiError::BadResponse("response had no text".into()))
+    }
 }
 
 /// A configured provider: which service, which model, whose key.
@@ -299,6 +380,27 @@ impl<'a> Provider<'a> {
             self.model = model;
         }
         self
+    }
+
+    pub fn supports_images(&self) -> bool {
+        let model = self.model.to_ascii_lowercase();
+        match self.id {
+            ProviderId::Gemini => true,
+            ProviderId::Groq => {
+                model.contains("llama-4-scout")
+                    || model.contains("llama-4-maverick")
+                    || model.contains("llama-3.2-11b-vision")
+            }
+            ProviderId::OpenRouter => {
+                model.contains("gemini-")
+                    || model.contains("gpt-4o")
+                    || model.contains("claude-3")
+                    || model.contains("claude-sonnet-4")
+                    || model.contains("llama-4")
+                    || model.contains("qwen2.5-vl")
+                    || model.contains("vision")
+            }
+        }
     }
 
     fn chat(&self, system: &str, user: &str) -> std::result::Result<String, AiError> {
@@ -344,13 +446,58 @@ impl AiProvider for Provider<'_> {
 
     fn distill(&self, request: &DistillRequest) -> std::result::Result<DistilledNote, AiError> {
         let user = prompts::distill_user(
+            request.source,
             &request.subject,
             request.topic.as_deref(),
             request.heading.as_deref(),
             &request.text,
         );
-        let raw = self.chat(prompts::DISTILL_SYSTEM, &user)?;
+        let raw = self.chat(prompts::distill_system(request.source), &user)?;
         ai::parse_note(&raw).map_err(|e| AiError::BadResponse(e.to_string()))
+    }
+
+    fn transcribe_page(
+        &self,
+        image: &[u8],
+        mime: &str,
+    ) -> std::result::Result<PageTranscript, AiError> {
+        if self.api_key.trim().is_empty() {
+            return Err(AiError::Auth("no API key has been set".into()));
+        }
+        if !self.supports_images() {
+            return Err(AiError::Unsupported(format!(
+                "the chosen {} model cannot read images",
+                self.id.as_str()
+            )));
+        }
+        let chat = Chat {
+            http: self.http,
+            api_key: &self.api_key,
+            model: &self.model,
+        };
+        let raw = match self.id {
+            ProviderId::Gemini => chat.gemini_image(
+                prompts::TRANSCRIBE_SYSTEM,
+                prompts::transcribe_user(),
+                image,
+                mime,
+            )?,
+            ProviderId::Groq => chat.openai_style_image(
+                "https://api.groq.com/openai/v1/chat/completions",
+                prompts::TRANSCRIBE_SYSTEM,
+                prompts::transcribe_user(),
+                image,
+                mime,
+            )?,
+            ProviderId::OpenRouter => chat.openai_style_image(
+                "https://openrouter.ai/api/v1/chat/completions",
+                prompts::TRANSCRIBE_SYSTEM,
+                prompts::transcribe_user(),
+                image,
+                mime,
+            )?,
+        };
+        ai::parse_transcript(&raw).map_err(|error| AiError::BadResponse(error.to_string()))
     }
 
     fn generate_cards(

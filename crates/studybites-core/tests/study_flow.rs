@@ -7,7 +7,9 @@ use studybites_core::db::DEV_KEY;
 use studybites_core::embed::{self, Embedder, LexicalEmbedder};
 use studybites_core::fsrs::{self, Memory, Rating, State};
 use studybites_core::providers::{Attempt, Http, HttpError, Provider};
-use studybites_core::{files, library, providers, study, subjects, topics, update, Db, NewTopic};
+use studybites_core::{
+    files, ingest, jobs, library, providers, quota, study, subjects, topics, update, Db, NewTopic,
+};
 
 fn db() -> Db {
     Db::open_in_memory(DEV_KEY).expect("open in-memory db")
@@ -291,6 +293,7 @@ fn cold_storage_round_trips_and_refuses_path_traversal() {
 struct FakeHttp {
     responses: std::sync::Mutex<Vec<std::result::Result<String, HttpError>>>,
     calls: std::sync::Mutex<usize>,
+    bodies: std::sync::Mutex<Vec<serde_json::Value>>,
 }
 
 impl FakeHttp {
@@ -298,10 +301,15 @@ impl FakeHttp {
         Self {
             responses: std::sync::Mutex::new(responses),
             calls: std::sync::Mutex::new(0),
+            bodies: std::sync::Mutex::new(Vec::new()),
         }
     }
     fn calls(&self) -> usize {
         *self.calls.lock().unwrap()
+    }
+
+    fn body(&self, index: usize) -> serde_json::Value {
+        self.bodies.lock().unwrap()[index].clone()
     }
 }
 
@@ -310,9 +318,10 @@ impl Http for FakeHttp {
         &self,
         _url: &str,
         _headers: &[(String, String)],
-        _body: &serde_json::Value,
+        body: &serde_json::Value,
     ) -> std::result::Result<String, HttpError> {
         *self.calls.lock().unwrap() += 1;
+        self.bodies.lock().unwrap().push(body.clone());
         let mut responses = self.responses.lock().unwrap();
         if responses.is_empty() {
             return Err(HttpError::Transport("no more canned responses".into()));
@@ -337,6 +346,7 @@ fn a_request() -> DistillRequest {
         topic: None,
         heading: None,
         text: "material".into(),
+        source: Default::default(),
     }
 }
 
@@ -450,6 +460,320 @@ fn a_safety_block_is_reported_as_a_bad_response() {
 
     let error = studybites_core::AiProvider::explain(&provider, "q", &[]).unwrap_err();
     assert!(matches!(error, AiError::BadResponse(_)));
+}
+
+#[test]
+fn photo_transcripts_parse_and_bad_json_retries_once() {
+    let transcript = r#"{"text":"The cell has [?] parts.","uncertain":["[?]"],"blank":false}"#;
+    let http = FakeHttp::new(vec![
+        Ok(gemini_body("not JSON")),
+        Ok(gemini_body(transcript)),
+    ]);
+    let provider = Provider::new(ProviderId::Gemini, "key".into(), &http);
+    let (used, parsed) = providers::route(&[provider], &|_| true, |provider| {
+        studybites_core::AiProvider::transcribe_page(provider, b"\xff\xd8\xff", "image/jpeg")
+    })
+    .expect("a malformed reply should be retried once");
+    assert_eq!(used, ProviderId::Gemini);
+    assert_eq!(parsed.text, "The cell has [?] parts.");
+    assert_eq!(parsed.uncertain, vec!["[?]"]);
+    assert_eq!(http.calls(), 2);
+}
+
+#[test]
+fn unsupported_image_models_fall_through_without_a_request() {
+    let no_images = FakeHttp::new(vec![]);
+    let works = FakeHttp::new(vec![Ok(gemini_body(
+        r#"{"text":"Notes text","uncertain":[],"blank":false}"#,
+    ))]);
+    let list = vec![
+        Provider::new(ProviderId::Groq, "key-a".into(), &no_images)
+            .with_model("openai/gpt-oss-20b"),
+        Provider::new(ProviderId::Gemini, "key-b".into(), &works),
+    ];
+    let (used, transcript) = providers::route(&list, &|_| true, |provider| {
+        studybites_core::AiProvider::transcribe_page(provider, b"\xff\xd8\xff", "image/jpeg")
+    })
+    .expect("the image-capable provider should be tried next");
+    assert_eq!(used, ProviderId::Gemini);
+    assert_eq!(transcript.text, "Notes text");
+    assert_eq!(no_images.calls(), 0);
+    assert_eq!(works.calls(), 1);
+}
+
+#[test]
+fn configured_vision_providers_receive_the_expected_multimodal_payload() {
+    let image = b"\xff\xd8\xffexample image";
+    let gemini_http = FakeHttp::new(vec![Ok(gemini_body(
+        r#"{"text":"wording","uncertain":[],"blank":false}"#,
+    ))]);
+    let gemini = Provider::new(ProviderId::Gemini, "key".into(), &gemini_http);
+    studybites_core::AiProvider::transcribe_page(&gemini, image, "image/jpeg").unwrap();
+    let request = gemini_http.body(0);
+    assert_eq!(
+        request["contents"][0]["parts"][1]["inline_data"]["mime_type"],
+        "image/jpeg"
+    );
+    assert_eq!(
+        request["contents"][0]["parts"][1]["inline_data"]["data"],
+        base64::Engine::encode(&base64::engine::general_purpose::STANDARD, image)
+    );
+    assert_eq!(request["generationConfig"]["temperature"], 0.0);
+
+    let openai_http = FakeHttp::new(vec![Ok(openai_body(
+        r#"{"text":"wording","uncertain":[],"blank":false}"#,
+    ))]);
+    let openai = Provider::new(ProviderId::Groq, "key".into(), &openai_http)
+        .with_model("meta-llama/llama-4-scout-17b-16e-instruct");
+    studybites_core::AiProvider::transcribe_page(&openai, image, "image/jpeg").unwrap();
+    let request = openai_http.body(0);
+    let content = request["messages"][1]["content"].as_array().unwrap();
+    assert_eq!(content[1]["type"], "image_url");
+    assert_eq!(
+        content[1]["image_url"]["url"],
+        format!(
+            "data:image/jpeg;base64,{}",
+            base64::Engine::encode(&base64::engine::general_purpose::STANDARD, image)
+        )
+    );
+}
+
+#[test]
+fn photo_upload_is_deduplicated_transcribed_and_queued_as_student_notes() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut db = db();
+    let subject = subjects::create(&db, "BIO 101").unwrap();
+    let key = crypto::derive(&[12u8; 32], b"photo-test");
+    let pages = vec![
+        b"\xff\xd8\xffpage one".to_vec(),
+        b"\xff\xd8\xffpage two".to_vec(),
+    ];
+
+    let accepted =
+        ingest::accept_photo_pages(&mut db, dir.path(), &key.file, subject.id, None, &pages)
+            .unwrap();
+    assert_eq!(accepted.material.mime, "image/jpeg");
+    assert_eq!(
+        accepted.material.original_filename,
+        "Notes photos (2 pages)"
+    );
+    assert_eq!(accepted.material.status, library::STATUS_QUEUED);
+    assert_eq!(jobs::counts(&db).unwrap().queued, 2);
+
+    let duplicate =
+        ingest::accept_photo_pages(&mut db, dir.path(), &key.file, subject.id, None, &pages)
+            .unwrap();
+    assert_eq!(duplicate.duplicate_of, Some(accepted.material.id));
+    assert_eq!(jobs::counts(&db).unwrap().queued, 2);
+
+    let response = Ok(gemini_body(
+        r#"{"text":"My exact class wording stays here.","uncertain":[],"blank":false}"#,
+    ));
+    let http = FakeHttp::new(vec![response.clone(), response]);
+    let provider = Provider::new(ProviderId::Gemini, "key".into(), &http);
+    let first = ingest::process_one(
+        &mut db,
+        std::slice::from_ref(&provider),
+        &LexicalEmbedder,
+        dir.path(),
+        &key.file,
+    )
+    .unwrap();
+    let second = ingest::process_one(
+        &mut db,
+        &[provider],
+        &LexicalEmbedder,
+        dir.path(),
+        &key.file,
+    )
+    .unwrap();
+    assert!(matches!(first, ingest::Processed::Done { .. }));
+    assert!(matches!(second, ingest::Processed::Done { .. }));
+    let counts = jobs::counts(&db).unwrap();
+    assert_eq!(counts.done, 2);
+    assert_eq!(counts.queued, 0);
+    assert_eq!(counts.running, 0);
+    assert_eq!(
+        library::material_get(&db, accepted.material.id)
+            .unwrap()
+            .status,
+        library::STATUS_REVIEW
+    );
+
+    let page = library::pages_for_material(&db, accepted.material.id).unwrap()[0].clone();
+    library::page_set_transcript(&db, page.id, "My own edited wording stays here.").unwrap();
+    assert_eq!(
+        ingest::confirm_transcript(&mut db, accepted.material.id).unwrap(),
+        1
+    );
+    let distill = jobs::pending(&db)
+        .unwrap()
+        .into_iter()
+        .find(|job| job.kind == ingest::JOB_DISTILL_CHUNK)
+        .expect("confirmation queues a distillation job");
+    let payload: ingest::DistillJob = distill.payload().unwrap();
+    assert_eq!(
+        payload.source,
+        studybites_core::ai::DistillSource::StudentNotes
+    );
+    assert!(payload.text.contains("My own edited wording stays here."));
+    assert!(payload.text.contains("Page 1"));
+}
+
+#[test]
+fn deleting_photo_material_returns_its_page_files_for_cleanup() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut db = db();
+    let subject = subjects::create(&db, "BIO 101").unwrap();
+    let key = crypto::derive(&[13u8; 32], b"photo-test");
+    let accepted = ingest::accept_photo_pages(
+        &mut db,
+        dir.path(),
+        &key.file,
+        subject.id,
+        None,
+        &[
+            b"\xff\xd8\xffpage one".to_vec(),
+            b"\xff\xd8\xffpage two".to_vec(),
+        ],
+    )
+    .unwrap();
+    let first_page = library::pages_for_material(&db, accepted.material.id).unwrap()[0].clone();
+    let shared = library::material_create(
+        &db,
+        &library::NewMaterial {
+            subject_id: subject.id,
+            topic_id: None,
+            original_filename: "Shared page",
+            mime: "image/jpeg",
+            size: 12,
+            sha256: "shared-page",
+            cold_path: None,
+        },
+    )
+    .unwrap();
+    library::page_create(
+        &db,
+        shared.id,
+        0,
+        &first_page.sha256,
+        first_page.cold_path.as_deref().unwrap(),
+    )
+    .unwrap();
+    let cold_paths = library::material_delete(&db, accepted.material.id).unwrap();
+    assert_eq!(cold_paths.len(), 1);
+    for path in cold_paths {
+        let stored = files::cold_dir(dir.path()).join(&path);
+        assert!(stored.exists());
+        files::cold_delete(dir.path(), &path).unwrap();
+        assert!(!stored.exists());
+    }
+    let shared_path = library::material_delete(&db, shared.id).unwrap();
+    assert_eq!(shared_path, vec![first_page.cold_path.unwrap()]);
+}
+
+#[test]
+fn photos_pause_with_a_clear_reason_when_no_image_provider_is_configured() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut db = db();
+    let subject = subjects::create(&db, "BIO 101").unwrap();
+    let key = crypto::derive(&[14u8; 32], b"photo-test");
+    let accepted = ingest::accept_photo_pages(
+        &mut db,
+        dir.path(),
+        &key.file,
+        subject.id,
+        None,
+        &[b"\xff\xd8\xffpage".to_vec()],
+    )
+    .unwrap();
+    let result =
+        ingest::process_one(&mut db, &[], &LexicalEmbedder, dir.path(), &key.file).unwrap();
+    assert_eq!(result, ingest::Processed::Paused { until: None });
+    assert_eq!(
+        library::material_get(&db, accepted.material.id)
+            .unwrap()
+            .error
+            .as_deref(),
+        Some("None of your AI keys can read images. Add a Gemini key.")
+    );
+    assert_eq!(jobs::counts(&db).unwrap().paused, 1);
+}
+
+#[test]
+fn an_exhausted_text_only_provider_does_not_hide_the_missing_image_support_message() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut db = db();
+    let subject = subjects::create(&db, "BIO 101").unwrap();
+    let key = crypto::derive(&[16u8; 32], b"photo-test");
+    let accepted = ingest::accept_photo_pages(
+        &mut db,
+        dir.path(),
+        &key.file,
+        subject.id,
+        None,
+        &[b"\xff\xd8\xffpage".to_vec()],
+    )
+    .unwrap();
+    quota::mark_exhausted(&db, "groq", "2099-01-01T00:00:00.000Z").unwrap();
+    let http = FakeHttp::new(vec![]);
+    let provider =
+        Provider::new(ProviderId::Groq, "key".into(), &http).with_model("openai/gpt-oss-20b");
+    let result = ingest::process_one(
+        &mut db,
+        &[provider],
+        &LexicalEmbedder,
+        dir.path(),
+        &key.file,
+    )
+    .unwrap();
+    assert_eq!(result, ingest::Processed::Paused { until: None });
+    assert_eq!(
+        library::material_get(&db, accepted.material.id)
+            .unwrap()
+            .error
+            .as_deref(),
+        Some("None of your AI keys can read images. Add a Gemini key.")
+    );
+    assert_eq!(http.calls(), 0);
+}
+
+#[test]
+fn a_photo_transcription_quota_error_pauses_instead_of_failing() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut db = db();
+    let subject = subjects::create(&db, "BIO 101").unwrap();
+    let key = crypto::derive(&[15u8; 32], b"photo-test");
+    let accepted = ingest::accept_photo_pages(
+        &mut db,
+        dir.path(),
+        &key.file,
+        subject.id,
+        None,
+        &[b"\xff\xd8\xffpage".to_vec()],
+    )
+    .unwrap();
+    let http = FakeHttp::new(vec![Err(HttpError::Status {
+        code: 429,
+        body: String::new(),
+    })]);
+    let provider = Provider::new(ProviderId::Gemini, "key".into(), &http);
+    let result = ingest::process_one(
+        &mut db,
+        &[provider],
+        &LexicalEmbedder,
+        dir.path(),
+        &key.file,
+    )
+    .unwrap();
+    assert!(matches!(result, ingest::Processed::Paused { .. }));
+    assert_eq!(jobs::counts(&db).unwrap().paused, 1);
+    assert_eq!(
+        library::material_get(&db, accepted.material.id)
+            .unwrap()
+            .status,
+        library::STATUS_PAUSED
+    );
 }
 
 #[test]
@@ -883,7 +1207,7 @@ fn material_status_and_duplicate_detection() {
     assert_eq!(failed.error.as_deref(), Some("the network went away"));
 
     let cold = library::material_delete(&db, material.id).unwrap();
-    assert_eq!(cold.as_deref(), Some("abc123.sbc"));
+    assert_eq!(cold, vec!["abc123.sbc"]);
     assert!(library::material_get(&db, material.id).is_err());
 }
 

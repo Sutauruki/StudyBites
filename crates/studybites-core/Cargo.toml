@@ -18,6 +18,7 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 # Cold storage: compress, then (Phase 3) encrypt.
 zstd = "0.13"
 sha2 = "0.10"
+base64 = "0.23.1"
 # Phase 3 — licensing and encryption at rest.
 # Verification only in the app; signing lives in the license-tool crate.
 ed25519-dalek = "2"

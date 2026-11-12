@@ -441,3 +441,13 @@ typed draft. The countdown pauses while the document is hidden, and open
 sessions older than 12 hours are closed at startup. Other screens with unsaved
 local state remain follow-ups: upload dialogs, scheme editing, settings forms,
 and CBT answers.
+
+### D39. Photo pages are resized locally and reviewed before distillation
+
+The WebView resizes each selected photo to JPEG (1600px long edge, quality
+0.8), which removes EXIF metadata; Rust validates the image signature, encrypts
+each page in cold storage, and queues one transcription job per page. The
+student can edit the transcript and mark diagram rectangles before confirming,
+and only that confirmed wording is distilled. The review image is read back
+from cold storage through a dedicated IPC command. Models without known image
+support pause with a configuration reason rather than repeatedly failing.

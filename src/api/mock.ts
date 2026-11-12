@@ -1,11 +1,15 @@
 import type {
   AppInfo,
+  Accepted,
   Backend,
   Card,
   DueCounts,
+  DiagramRect,
   ExplainResult,
   GradeResult,
   Material,
+  MaterialPage,
+  Note,
   NewTopic,
   ProviderInfo,
   QueueCounts,
@@ -44,6 +48,8 @@ interface Rows {
   topics: Array<Omit<Topic, "children">>;
   settings: Record<string, string>;
   materials: Material[];
+  pages: MaterialPage[];
+  notes: Note[];
   cards: Array<Card & { due: number; isNewCard: boolean }>;
   sessions: MockSession[];
 }
@@ -65,6 +71,8 @@ const empty = (): Rows => ({
   topics: [],
   settings: {},
   materials: [],
+  pages: [],
+  notes: [],
   cards: [],
   sessions: [],
 });
@@ -493,6 +501,57 @@ export const mockBackend: Backend = {
 
   materialUpload: () =>
     Promise.reject("Uploading needs the desktop app — this is the browser preview."),
+  materialUploadPhotos: (subjectId, topicId, pages) => {
+    if (pages.length < 1 || pages.length > 20) throw "Choose between 1 and 20 photos.";
+    if (pages.some((page) => page.length === 0 || page.length > 4 * 1024 * 1024)) {
+      throw "Each photo must be 4 MB or smaller. Choose fewer or smaller photos.";
+    }
+    if (pages.some((page) => !hasSupportedImageMagic(page))) {
+      throw "Each photo must be a JPEG, PNG or WebP image.";
+    }
+    const rows = read();
+    findSubject(rows, subjectId);
+    const fingerprint = photoFingerprint(pages);
+    const duplicate = rows.materials.find(
+      (material) => material.subjectId === subjectId && material.sha256 === fingerprint,
+    );
+    if (duplicate) {
+      return tick<Accepted>({ material: duplicate, chunkCount: 0, duplicateOf: duplicate.id });
+    }
+    const material: Material = {
+      id: rows.nextId++,
+      subjectId,
+      topicId,
+      originalFilename: `Notes photos (${pages.length} pages)`,
+      mime: "image/jpeg",
+      size: pages.reduce((sum, page) => sum + page.length, 0),
+      sha256: fingerprint,
+      coldPath: null,
+      uploadedAt: new Date().toISOString(),
+      status: "review",
+      error: null,
+      noteCount: 0,
+      cardCount: 0,
+    };
+    rows.materials.push(material);
+    pages.forEach((_page, pageIndex) => {
+      rows.pages.push({
+        id: rows.nextId++,
+        materialId: material.id,
+        pageIndex,
+        sha256: `${fingerprint}-${pageIndex}`,
+        coldPath: null,
+        transcript: "After class: mitochondria [?] energy from glucose [?].",
+        uncertain: ["[?]", "[?]"],
+        diagrams:
+          pageIndex === 0 ? [{ x: 0.15, y: 0.2, width: 0.4, height: 0.3 }] : [],
+        status: "done",
+        error: null,
+      });
+    });
+    write(rows);
+    return tick<Accepted>({ material, chunkCount: pages.length, duplicateOf: null });
+  },
   filePreviewText: () =>
     Promise.reject("Reading files needs the desktop app — this is the browser preview."),
   materialsList: (subjectId) =>
@@ -508,11 +567,87 @@ export const mockBackend: Backend = {
   materialDelete: (id) => {
     const rows = read();
     rows.materials = rows.materials.filter((m) => m.id !== id);
+    rows.pages = rows.pages.filter((page) => page.materialId !== id);
+    rows.notes = rows.notes.filter((note) => note.materialId !== id);
     write(rows);
     return tick(undefined);
   },
   materialSaveOriginal: () =>
     Promise.reject("Saving files needs the desktop app — this is the browser preview."),
+  materialPagesGet: (materialId) =>
+    tick(read().pages.filter((page) => page.materialId === materialId)),
+  materialPageImageGet: () => tick(""),
+  materialPageTextSet: (pageId, text) => {
+    if (text.length > 20_000) throw "A page transcript must be 20,000 characters or fewer.";
+    const rows = read();
+    const page = rows.pages.find((item) => item.id === pageId);
+    if (!page) throw `page ${pageId} was not found`;
+    page.transcript = text;
+    write(rows);
+    return tick(page);
+  },
+  materialDiagramsSet: (pageId, diagrams: DiagramRect[]) => {
+    const rows = read();
+    const page = rows.pages.find((item) => item.id === pageId);
+    if (!page) throw `page ${pageId} was not found`;
+    if (
+      diagrams.length > 100 ||
+      diagrams.some(
+        (rect) =>
+          !Number.isFinite(rect.x) ||
+          !Number.isFinite(rect.y) ||
+          !Number.isFinite(rect.width) ||
+          !Number.isFinite(rect.height) ||
+          rect.x < 0 ||
+          rect.y < 0 ||
+          rect.width <= 0 ||
+          rect.height <= 0 ||
+          rect.x + rect.width > 1 ||
+          rect.y + rect.height > 1,
+      )
+    ) {
+      throw "Diagram rectangles must be normalized positions on the page.";
+    }
+    page.diagrams = diagrams;
+    write(rows);
+    return tick(page);
+  },
+  materialTranscriptConfirm: (materialId) => {
+    const rows = read();
+    const material = rows.materials.find((item) => item.id === materialId);
+    if (!material) throw `material ${materialId} was not found`;
+    const pages = rows.pages.filter((page) => page.materialId === materialId);
+    if (pages.length === 0 || pages.some((page) => page.status !== "done" || page.transcript === null)) {
+      throw "Wait until every page has a transcript before confirming.";
+    }
+    if (!pages.some((page) => page.transcript?.trim())) {
+      throw "Add readable text to at least one page before confirming.";
+    }
+    material.status = "done";
+    material.noteCount = 1;
+    material.error = null;
+    rows.notes.push({
+      id: rows.nextId++,
+      materialId,
+      topicId: material.topicId,
+      isPreview: false,
+      createdAt: new Date().toISOString(),
+      content: {
+        title: "Mitochondria",
+        keyIdeas: ["Mitochondria release energy from glucose."],
+        definitions: [],
+        formulas: [],
+        workedExamples: [],
+        commonMistakes: [],
+        checkThis: ["Check the uncertain words against the page."],
+        aiAdditions: ["A short explanation of energy release."],
+      },
+    });
+    write(rows);
+    return tick(1);
+  },
+  materialNotesGet: (materialId) =>
+    tick(read().notes.filter((note) => note.materialId === materialId)),
 
   topicSuggest: () =>
     tick<TopicMatch>({
@@ -699,9 +834,11 @@ export const mockBackend: Backend = {
       counts: { queued: 0, running: 0, done: 0, failed: 0, paused: 0 },
       quota: [],
       resumesAt: null,
+      pausedReason: null,
     }),
   queueRetry: () =>
     tick<QueueCounts>({ queued: 0, running: 0, done: 0, failed: 0, paused: 0 }),
+  queueWake: () => tick(undefined),
 
   providersList: () =>
     tick<ProviderInfo[]>([
@@ -770,6 +907,37 @@ export const mockBackend: Backend = {
     window.open(url, "_blank", "noopener,noreferrer");
   },
 };
+
+function photoFingerprint(pages: Uint8Array[]): string {
+  let hash = 0x811c9dc5;
+  for (const page of pages) {
+    hash = Math.imul(hash ^ page.length, 0x01000193);
+    for (const byte of page) hash = Math.imul(hash ^ byte, 0x01000193);
+  }
+  return `mock-${(hash >>> 0).toString(16).padStart(8, "0")}`;
+}
+
+function hasSupportedImageMagic(page: Uint8Array): boolean {
+  const jpeg = page[0] === 0xff && page[1] === 0xd8 && page[2] === 0xff;
+  const png =
+    page.length >= 8 &&
+    page[0] === 0x89 &&
+    page[1] === 0x50 &&
+    page[2] === 0x4e &&
+    page[3] === 0x47 &&
+    page[4] === 0x0d &&
+    page[5] === 0x0a &&
+    page[6] === 0x1a &&
+    page[7] === 0x0a;
+  const webp =
+    page.length >= 12 &&
+    page[0] === 0x52 &&
+    page[1] === 0x49 &&
+    page[2] === 0x46 &&
+    page[3] === 0x46 &&
+    String.fromCharCode(...page.slice(8, 12)) === "WEBP";
+  return jpeg || png || webp;
+}
 
 /** Cards belonging to a subject, through their topic. */
 function cardsFor(rows: Rows, subjectId: number | null) {

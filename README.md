@@ -162,7 +162,10 @@ wrapper that locks the database and forwards calls.
 
 ### Every day
 
-1. **Add material** — a lecture PDF, a DOCX, or a text file.
+1. **Add material** — a lecture PDF, a DOCX, a text file, or photos of your
+   class notes. Photos are resized on the device, transcribed in the
+   background, and kept in **Needs review** until you check and confirm the
+   wording. You can edit uncertain words and mark diagrams before continuing.
 2. **Confirm the topic.** If there is a scheme of work, the AI pre-selects the
    topic it thinks the material belongs to; confirm it, pick another, or choose
    "Something else" and describe it. Nothing is filed silently.

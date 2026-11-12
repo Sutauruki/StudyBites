@@ -70,6 +70,12 @@ export const tauriBackend: Backend = {
     const filename = pickedFilename(path);
     return invoke("material_upload_uri", { subjectId, topicId, uri: path, filename });
   },
+  materialUploadPhotos: (subjectId, topicId, pages) =>
+    invoke("material_upload_photos", {
+      subjectId,
+      topicId,
+      pages: pages.map((page) => Array.from(page)),
+    }),
   filePreviewText: async (path) => {
     if (!path.startsWith("content://")) {
       return invoke("file_preview_text", { path });
@@ -85,6 +91,15 @@ export const tauriBackend: Backend = {
   materialDelete: (id) => invoke("material_delete", { id }),
   materialSaveOriginal: (id, destination) =>
     invoke("material_save_original", { id, destination }),
+  materialPagesGet: (materialId) => invoke("material_pages_get", { materialId }),
+  materialPageImageGet: (pageId) => invoke("material_page_image_get", { pageId }),
+  materialPageTextSet: (pageId, text) =>
+    invoke("material_page_text_set", { pageId, text }),
+  materialDiagramsSet: (pageId, rects) =>
+    invoke("material_diagrams_set", { pageId, rectsJson: JSON.stringify(rects) }),
+  materialTranscriptConfirm: (materialId) =>
+    invoke("material_transcript_confirm", { materialId }),
+  materialNotesGet: (materialId) => invoke("material_notes_get", { materialId }),
 
   topicSuggest: (subjectId, text) => invoke("topic_suggest", { subjectId, text }),
   schemeParse: (text) => invoke("scheme_parse", { text }),
@@ -104,9 +119,16 @@ export const tauriBackend: Backend = {
   queueRetry: () => invoke("queue_retry"),
 
   providersList: () => invoke("providers_list"),
-  providerKeySet: (provider, key) => invoke("provider_key_set", { provider, key }),
+  providerKeySet: async (provider, key) => {
+    await invoke("provider_key_set", { provider, key });
+    await invoke("queue_wake");
+  },
   providerModels: (provider) => invoke("provider_models", { provider }),
-  providerModelSet: (provider, model) => invoke("provider_model_set", { provider, model }),
+  providerModelSet: async (provider, model) => {
+    await invoke("provider_model_set", { provider, model });
+    await invoke("queue_wake");
+  },
+  queueWake: () => invoke("queue_wake"),
   githubTokenSet: (token) => invoke("github_token_set", { token }),
   githubTokenPresent: () => invoke("github_token_present"),
   updateCheck: () => invoke("update_check"),

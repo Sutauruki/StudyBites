@@ -156,19 +156,25 @@ fn drain(app: &AppHandle, db: &mut studybites_core::Db) {
         };
 
         if providers.is_empty() {
-            // Nothing can be processed without a key; the queue simply waits.
+            if let Err(error) = ingest::pause_waiting_photo_jobs(db) {
+                eprintln!("StudyBites could not pause photo transcription jobs: {error}");
+            }
             break;
         }
 
-        let outcome = ingest::process_one(db, &providers, &embedder);
+        let file_key = state.file_key();
+        let outcome = ingest::process_one(db, &providers, &embedder, &state.app_data, &file_key);
 
         match outcome {
             Ok(ingest::Processed::Idle) => break,
-            // A pause means every provider is out of quota; stop rather than
-            // spin, and let the next wake-up try again.
+            // A pause means the job needs quota or configuration to change;
+            // stop rather than spin and let the next wake-up try again.
             Ok(ingest::Processed::Paused { .. }) => break,
             Ok(_) => report(app),
-            Err(_) => break,
+            Err(error) => {
+                eprintln!("StudyBites could not process an ingestion job: {error}");
+                break;
+            }
         }
     }
 

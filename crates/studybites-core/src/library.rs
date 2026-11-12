@@ -13,6 +13,7 @@ pub const STATUS_PROCESSING: &str = "processing";
 pub const STATUS_DONE: &str = "done";
 pub const STATUS_FAILED: &str = "failed";
 pub const STATUS_PAUSED: &str = "paused";
+pub const STATUS_REVIEW: &str = "review";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -178,14 +179,194 @@ pub fn material_set_topic(db: &Db, id: i64, topic_id: Option<i64>) -> Result<Mat
 ///
 /// Returns the cold-storage name, so removing the file stays with the caller
 /// and this module touches no filesystem.
-pub fn material_delete(db: &Db, id: i64) -> Result<Option<String>> {
+pub fn material_delete(db: &Db, id: i64) -> Result<Vec<String>> {
     let material = material_get(db, id)?;
+    let page_paths = {
+        let mut stmt = db
+            .conn()
+            .prepare("SELECT cold_path FROM material_pages WHERE material_id = ?1")?;
+        let rows = stmt.query_map([id], |row| row.get::<_, Option<String>>(0))?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()?
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>()
+    };
     db.conn()
         .execute("DELETE FROM materials WHERE id = ?1", [id])?;
-    Ok(material.cold_path)
+    let candidates = material
+        .cold_path
+        .into_iter()
+        .chain(page_paths)
+        .collect::<Vec<_>>();
+    let mut files = Vec::new();
+    for path in candidates {
+        let still_used: bool = db.conn().query_row(
+            "SELECT EXISTS(
+                SELECT 1 FROM materials WHERE cold_path = ?1
+                UNION ALL
+                SELECT 1 FROM material_pages WHERE cold_path = ?1
+            )",
+            [&path],
+            |row| row.get(0),
+        )?;
+        if !still_used && !files.contains(&path) {
+            files.push(path);
+        }
+    }
+    Ok(files)
 }
 
 // ---- notes --------------------------------------------------------------
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiagramRect {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MaterialPage {
+    pub id: i64,
+    pub material_id: i64,
+    pub page_index: i64,
+    pub sha256: String,
+    pub cold_path: Option<String>,
+    pub transcript: Option<String>,
+    pub uncertain: Vec<String>,
+    pub diagrams: Vec<DiagramRect>,
+    pub status: String,
+    pub error: Option<String>,
+}
+
+fn row_to_page(row: &Row) -> rusqlite::Result<MaterialPage> {
+    let uncertain: String = row.get("uncertain_json")?;
+    let diagrams: String = row.get("diagrams_json")?;
+    Ok(MaterialPage {
+        id: row.get("id")?,
+        material_id: row.get("material_id")?,
+        page_index: row.get("page_index")?,
+        sha256: row.get("sha256")?,
+        cold_path: row.get("cold_path")?,
+        transcript: row.get("transcript")?,
+        uncertain: serde_json::from_str(&uncertain).unwrap_or_default(),
+        diagrams: serde_json::from_str(&diagrams).unwrap_or_default(),
+        status: row.get("status")?,
+        error: row.get("error")?,
+    })
+}
+
+pub fn page_create(
+    db: &Db,
+    material_id: i64,
+    page_index: i64,
+    sha256: &str,
+    cold_path: &str,
+) -> Result<MaterialPage> {
+    db.conn().execute(
+        "INSERT INTO material_pages(material_id, page_index, sha256, cold_path)
+         VALUES (?1, ?2, ?3, ?4)",
+        (material_id, page_index, sha256, cold_path),
+    )?;
+    page_get(db, db.conn().last_insert_rowid())
+}
+
+pub fn page_get(db: &Db, id: i64) -> Result<MaterialPage> {
+    let mut stmt = db
+        .conn()
+        .prepare("SELECT * FROM material_pages WHERE id = ?1")?;
+    let mut rows = stmt.query([id])?;
+    match rows.next()? {
+        Some(row) => Ok(row_to_page(row)?),
+        None => Err(CoreError::NotFound {
+            kind: "material page",
+            id,
+        }),
+    }
+}
+
+pub fn pages_for_material(db: &Db, material_id: i64) -> Result<Vec<MaterialPage>> {
+    material_get(db, material_id)?;
+    let mut stmt = db
+        .conn()
+        .prepare("SELECT * FROM material_pages WHERE material_id = ?1 ORDER BY page_index, id")?;
+    let rows = stmt.query_map([material_id], row_to_page)?;
+    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+}
+
+pub fn page_set_transcript(db: &Db, id: i64, transcript: &str) -> Result<MaterialPage> {
+    if transcript.chars().count() > 20_000 {
+        return Err(CoreError::Invalid(
+            "a page transcript must be 20,000 characters or fewer".into(),
+        ));
+    }
+    db.conn().execute(
+        "UPDATE material_pages SET transcript = ?2 WHERE id = ?1",
+        (id, transcript),
+    )?;
+    page_get(db, id)
+}
+
+pub fn page_set_transcription(
+    db: &Db,
+    id: i64,
+    transcript: &str,
+    uncertain: &[String],
+) -> Result<MaterialPage> {
+    if transcript.chars().count() > 20_000 {
+        return Err(CoreError::Invalid(
+            "a page transcript must be 20,000 characters or fewer".into(),
+        ));
+    }
+    db.conn().execute(
+        "UPDATE material_pages SET transcript = ?2, uncertain_json = ?3 WHERE id = ?1",
+        (id, transcript, serde_json::to_string(uncertain)?),
+    )?;
+    page_get(db, id)
+}
+
+pub fn page_set_status(
+    db: &Db,
+    id: i64,
+    status: &str,
+    error: Option<&str>,
+) -> Result<MaterialPage> {
+    db.conn().execute(
+        "UPDATE material_pages SET status = ?2, error = ?3 WHERE id = ?1",
+        (id, status, error),
+    )?;
+    page_get(db, id)
+}
+
+pub fn diagrams_set(db: &Db, id: i64, rects_json: &str) -> Result<MaterialPage> {
+    let rects: Vec<DiagramRect> = serde_json::from_str(rects_json)?;
+    if rects.len() > 100
+        || rects.iter().any(|rect| {
+            !rect.x.is_finite()
+                || !rect.y.is_finite()
+                || !rect.width.is_finite()
+                || !rect.height.is_finite()
+                || rect.x < 0.0
+                || rect.y < 0.0
+                || rect.width <= 0.0
+                || rect.height <= 0.0
+                || rect.x + rect.width > 1.0
+                || rect.y + rect.height > 1.0
+        })
+    {
+        return Err(CoreError::Invalid(
+            "diagram rectangles must be normalized positions on the page".into(),
+        ));
+    }
+    db.conn().execute(
+        "UPDATE material_pages SET diagrams_json = ?2 WHERE id = ?1",
+        (id, serde_json::to_string(&rects)?),
+    )?;
+    page_get(db, id)
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

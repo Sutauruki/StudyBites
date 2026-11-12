@@ -22,6 +22,7 @@ tauri = { version = "2.12", features = [] }
 # File picker and "open the download page", both needed by Phase 2's UI.
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
+base64 = "0.23.1"
 # API keys live in the OS keychain (Windows DPAPI), never in the database.
 keyring = { version = "3", features = ["windows-native", "apple-native", "sync-secret-service"] }
 serde = { workspace = true }

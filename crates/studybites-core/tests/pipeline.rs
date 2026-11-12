@@ -199,6 +199,10 @@ fn ai_errors_route_correctly() {
     assert!(!auth.is_retryable(), "a bad key stays bad");
     assert!(auth.should_fall_through());
 
+    let unsupported = AiError::Unsupported("text-only model".into());
+    assert!(!unsupported.is_retryable());
+    assert!(unsupported.should_fall_through());
+
     // A malformed reply is worth one retry, but another provider would be
     // answering a different question, so it does not fall through.
     let bad = AiError::BadResponse("no json".into());

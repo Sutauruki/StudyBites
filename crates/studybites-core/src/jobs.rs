@@ -197,6 +197,20 @@ pub fn pause_until(db: &Db, id: i64, until: &str, reason: &str) -> Result<Job> {
     get(db, id)
 }
 
+/// Pause work until a configuration change, without burning a retry attempt.
+pub fn pause_for_configuration(db: &Db, id: i64, reason: &str) -> Result<Job> {
+    db.conn().execute(
+        "UPDATE jobs
+            SET status = 'paused',
+                attempts = MAX(attempts - 1, 0),
+                next_run_at = NULL,
+                last_error = ?2
+          WHERE id = ?1",
+        (id, reason),
+    )?;
+    get(db, id)
+}
+
 /// Put a failed job back in the queue, e.g. from a "Try again" button.
 pub fn retry(db: &Db, id: i64) -> Result<Job> {
     db.conn().execute(
@@ -248,6 +262,20 @@ pub fn counts(db: &Db) -> Result<QueueCounts> {
         }
     }
     Ok(counts)
+}
+
+/// The first actionable reason attached to a paused job, if any.
+pub fn paused_reason(db: &Db) -> Result<Option<String>> {
+    let mut stmt = db.conn().prepare(
+        "SELECT last_error FROM jobs
+          WHERE status = 'paused' AND last_error IS NOT NULL
+          ORDER BY id LIMIT 1",
+    )?;
+    let mut rows = stmt.query([])?;
+    match rows.next()? {
+        Some(row) => Ok(Some(row.get(0)?)),
+        None => Ok(None),
+    }
 }
 
 /// Clear finished jobs so the table does not grow without bound.
