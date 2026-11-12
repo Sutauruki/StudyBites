@@ -139,3 +139,41 @@ Branch and last commit: ccr-cd109432-nnvymz 2ce8193 | CI: not run
  - Suggested next step: continue to Task D; retain the device checklist for validation.
 READY FOR NEXT: yes
 === END REPORT ===
+
+=== STUDYBITES HANDOFF REPORT ===
+Task: G — DeepSeek provider | Status: partly done
+Branch and last commit: ccr-cd109432-nnvymz 62869a9 | CI: not run
+1. What I did (one line per change):
+ - README.md (edited): documented the four BYO-key providers, costs, and Gemini's current photo-transcription preference.
+ - crates/studybites-core/src/ai.rs (edited): added DeepSeek identity, default priority, and key URL.
+ - crates/studybites-core/src/providers.rs (edited): implemented DeepSeek text/vision calls, model listing, image support and credit-error mapping.
+ - crates/studybites-core/tests/pipeline.rs (edited): covered provider identity, priority and default model.
+ - crates/studybites-core/tests/study_flow.rs (edited): covered request shapes, aliases, image fallback, errors and model listing.
+ - docs/DECISIONS.md (edited): added D42 with official API, errors, vision and pricing references.
+ - docs/PRODUCT_PLAN.md (edited): documented providers, pricing and photo preference.
+ - src-tauri/src/lib.rs (edited): registered the key-test command.
+ - src-tauri/src/phase2.rs (edited): exposed DeepSeek in Settings and added a non-persisting key test.
+ - src/api/mock.ts (edited): added DeepSeek and browser-preview key-test behavior.
+ - src/api/tauri.ts (edited): connected the key-test IPC method.
+ - src/api/types.ts (edited): added the typed key-test method.
+ - src/routes/SettingsPage.tsx (edited): added key testing and DeepSeek help text.
+2. Checks I ran (command and result):
+ - cargo fmt --all --check; cargo test -p studybites-core; cargo check --workspace --all-targets; cargo clippy --workspace --all-targets -- -D warnings: PASSED.
+ - npm run build:web; git diff --check: PASSED.
+ - cargo test --workspace: NOT RUN to completion; stopped during a clean Tauri-library rebuild after several minutes, with no error output.
+ - Failures: none in completed checks.
+3. Not verified:
+ - Live DeepSeek calls or key validation; no provider key was used.
+ - Settings behavior in a running desktop app and photo transcription on a device.
+4. Where I changed or went beyond the prompt, and why:
+ - No unrelated scope changes. D42 records the verified API format, behavior and pricing.
+5. Problems, risks and anything I guessed:
+ - Pricing and available models can change; model selection is fetched live. The workspace test command did not complete.
+6. What the developer must do or test now (device checklist, secrets, settings):
+ - In Settings, test and save a DeepSeek key; select Flash and verify a photo transcription, then select Pro with another image-capable provider configured to confirm fallback. Check current DeepSeek pricing before use.
+7. What is left:
+ - Remaining parts of this task: live API and Settings/device verification.
+ - Roadmap status: items 1-4 and 11 [~]; items 5-10 and 12-16 [ ].
+ - Suggested next step: continue to Task H.
+READY FOR NEXT: yes
+=== END REPORT ===
