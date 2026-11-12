@@ -26,6 +26,34 @@ READY FOR NEXT: yes
 === END REPORT ===
 
 === STUDYBITES HANDOFF REPORT ===
+Task: F — Bug report pipeline | Status: partly done
+Branch and last commit: ccr-cd109432-nnvymz 4d1c08c | CI: not run
+1. What I did (one line per change):
+ - Edited: .github/workflows/build-mobile.yml, .github/workflows/build-windows.yml, README.md, crates/studybites-core/src/lib.rs, crates/studybites-core/src/migrations.rs, crates/studybites-core/src/providers.rs, crates/studybites-core/tests/storage.rs, docs/DECISIONS.md, docs/PRODUCT_PLAN.md, docs/ROADMAP.md, src-tauri/src/lib.rs, src-tauri/src/phase2.rs, src-tauri/src/state.rs, src/App.tsx, src/api/index.ts, src/api/mock.ts, src/api/tauri.ts, src/api/types.ts, src/routes/SettingsPage.tsx, src/styles/app.css: wired opt-in reports, minimized diagnostics, encrypted outbox, and compile-time endpoint configuration.
+ - New: .github/workflows/deploy-bug-worker.yml, crates/studybites-core/src/bugreport.rs, src/components/ReportBugDialog.tsx, src/lib/diag.ts, workers/bug-report/README.md, workers/bug-report/package-lock.json, workers/bug-report/package.json, workers/bug-report/src/index.ts, workers/bug-report/test/index.test.ts, workers/bug-report/tsconfig.json, workers/bug-report/wrangler.toml: added validation, redaction, email delivery, rate limits, tests and deployment instructions.
+2. Checks I ran (command and result):
+ - cargo fmt --all --check; cargo test -p studybites-core; cargo check --workspace --all-targets; cargo clippy --workspace --all-targets -- -D warnings: PASSED.
+ - npm run build:web: PASSED.
+ - cd workers/bug-report && npm test && npm run typecheck: PASSED (9 tests).
+ - git diff --check: PASSED.
+ - npm test from repository root: FAILED because no root test script exists; the Worker test command above passed from its directory.
+ - Failures: `npm error Missing script: "test"` (wrong working directory; no code test failures).
+3. Not verified:
+ - Worker deployment/live Resend delivery; Settings UI, screenshot picker, clipboard, and offline queue on Windows or Android devices.
+4. Where I changed or went beyond the prompt, and why:
+ - D41 records opt-in reporting and diagnostic data minimization; generic error categories prevent raw error text from being uploaded.
+5. Problems, risks and anything I guessed:
+ - `onboarding@resend.dev` is test-only. Cloudflare KV rate counters are eventually consistent; concurrent requests can race.
+6. What the developer must do or test now (device checklist, secrets, settings):
+ - Configure the Worker secrets and `STUDYBITES_BUG_REPORT_URL` repository variable per workers/bug-report/README.md; deploy and verify delivery. Replace the test sender before public launch. On Windows and Android, test send, three resized screenshots, copy fallback, offline queue/retry, and privacy disclosure.
+7. What is left:
+ - Remaining parts of this task: Worker deployment and device verification.
+ - Roadmap status: items 1, 2, 3, 4, 11 [~]; items 5-10, 12-16 [ ].
+ - Suggested next step: deploy the Worker with owner-managed secrets, then continue Task G.
+READY FOR NEXT: yes
+=== END REPORT ===
+
+=== STUDYBITES HANDOFF REPORT ===
 Task: E — Android Do Not Disturb | Status: partly done
 Branch and last commit: ccr-cd109432-nnvymz 272d441 | CI: not run
 1. What I did (one line per change):
