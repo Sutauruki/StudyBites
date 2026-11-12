@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-dnd-request-access"
+description = "Enables the dnd_request_access command without any pre-configured scope."
+commands.allow = ["dnd_request_access"]
+
+[[permission]]
+identifier = "deny-dnd-request-access"
+description = "Denies the dnd_request_access command without any pre-configured scope."
+commands.deny = ["dnd_request_access"]

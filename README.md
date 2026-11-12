@@ -186,6 +186,10 @@ does not spend time while the app is hidden. Sessions left open for more than
 During a session: **Space** reveals, **1–4** grade (Again / Hard / Good / Easy),
 **Esc** ends.
 
+On supported Android devices, Settings can enable Do Not Disturb during study.
+Priority only is the default, so alarms and priority contacts can still ring;
+StudyBites restores your previous mode when the session ends.
+
 ### Other things it does
 
 - **Ask about a subject** — answers come only from your own uploaded notes for

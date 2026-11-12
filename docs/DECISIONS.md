@@ -451,3 +451,13 @@ student can edit the transcript and mark diagram rectangles before confirming,
 and only that confirmed wording is distilled. The review image is read back
 from cold storage through a dedicated IPC command. Models without known image
 support pause with a configuration reason rather than repeatedly failing.
+
+### D40. Do Not Disturb is Android-only and restores conservatively
+
+The local Tauri plugin is a no-op on desktop and in the browser. Priority-only
+is the default so alarms and priority contacts remain available. Android saves
+the previous filter and the filter it applies, then restores only if the
+current filter is still the one StudyBites set; a manual change is respected.
+An inexact safety alarm restores the filter at the planned end plus two
+minutes even if the app is killed. The app also restores on session end,
+leaving the session, errors, and startup without a resumable study snapshot.

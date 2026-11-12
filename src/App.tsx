@@ -61,6 +61,12 @@ export function App() {
         setLicense(status);
         setVersion(info.version);
 
+        const savedResume = loadResume();
+        if (!savedResume?.study) {
+          void backend.dndRestore().catch(() => {
+            console.warn("StudyBites could not restore Do Not Disturb.");
+          });
+        }
         if (!status.unlocked) return;
         const saved = await backend.settingGet(THEME_KEY);
         if (!alive) return;
@@ -69,7 +75,6 @@ export function App() {
         applyTheme(next);
 
         let nextView: View = { name: "home" };
-        const savedResume = loadResume();
         if (savedResume) {
           const subjectId =
             savedResume.view.name === "subject"

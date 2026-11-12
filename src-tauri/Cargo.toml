@@ -28,3 +28,4 @@ keyring = { version = "3", features = ["windows-native", "apple-native", "sync-s
 serde = { workspace = true }
 serde_json = { workspace = true }
 tauri-plugin-fs = "2"
+tauri-plugin-dnd = { path = "plugins/tauri-plugin-dnd" }

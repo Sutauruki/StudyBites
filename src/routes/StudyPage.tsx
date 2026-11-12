@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   backend,
   errorText,
+  type DndMode,
   type MarkOutcome,
   type PreviewOffer,
   type SessionCard,
@@ -53,9 +54,18 @@ export function StudyPage({
   const [written, setWritten] = useState("");
   const [marking, setMarking] = useState(false);
   const [outcome, setOutcome] = useState<MarkOutcome | null>(null);
+  const [dndActive, setDndActive] = useState(false);
 
   const shownAt = useRef<number>(Date.now());
   const busy = useRef(false);
+  const dndAttemptedFor = useRef<number | null>(null);
+
+  const restoreDnd = useCallback(() => {
+    void backend
+      .dndRestore()
+      .then(() => setDndActive(false))
+      .catch(() => console.warn("StudyBites could not restore Do Not Disturb."));
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -105,6 +115,7 @@ export function StudyPage({
 
   const finish = useCallback(async () => {
     clearResume();
+    restoreDnd();
     if (!session) {
       onDone();
       return;
@@ -115,7 +126,51 @@ export function StudyPage({
       /* the summary is a nicety; never block ending on it */
     }
     setPhase("finished");
-  }, [session, onDone]);
+  }, [session, onDone, restoreDnd]);
+
+  useEffect(() => {
+    if (!session || phase !== "studying" || dndAttemptedFor.current === session.id) return;
+    dndAttemptedFor.current = session.id;
+    let active = true;
+    void (async () => {
+      try {
+        if ((await backend.settingGet("dnd.enabled")) !== "true") return;
+        const [status, savedMode] = await Promise.all([
+          backend.dndStatus(),
+          backend.settingGet("dnd.mode"),
+        ]);
+        if (!active || !status.supported || !status.granted) return;
+        const mode: Exclude<DndMode, "off"> =
+          savedMode === "alarms" ? "alarms" : "priority";
+        const result = await backend.dndEnable(
+          mode,
+          Math.max(1, Math.ceil(secondsLeft / 60)) + 2,
+        );
+        if (active) {
+          setDndActive(result.mode !== "off");
+        } else {
+          restoreDnd();
+        }
+      } catch {
+        restoreDnd();
+        console.warn("StudyBites could not enable Do Not Disturb.");
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [phase, restoreDnd, session?.id]);
+
+  useEffect(
+    () => () => {
+      restoreDnd();
+    },
+    [restoreDnd],
+  );
+
+  useEffect(() => {
+    if (error) restoreDnd();
+  }, [error, restoreDnd]);
 
   const persistResume = useCallback(
     (immediate = false) => {
@@ -330,6 +385,14 @@ export function StudyPage({
     >
 
       {error && <Banner kind="error">{error}</Banner>}
+      {dndActive && (
+        <Banner kind="info">
+          Do Not Disturb is on.{" "}
+          <button className="btn btn--ghost" onClick={restoreDnd}>
+            Turn it off for this session
+          </button>
+        </Banner>
+      )}
       {resume && <p className="muted">Welcome back. Your session is where you left it.</p>}
       {current.card.isPreview && (
         <span className="chip chip--accent">AI preview — not from your class</span>

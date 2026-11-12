@@ -5,6 +5,8 @@ import type {
   CbtResult,
   CbtSummary,
   CbtTest,
+  DndMode,
+  DndStatus,
   LicenseStatus,
   MarkOutcome,
   NewTopic,
@@ -60,6 +62,11 @@ export const tauriBackend: Backend = {
 
   settingGet: (key) => invoke<string | null>("setting_get", { key }),
   settingSet: (key, value) => invoke<void>("setting_set", { key, value }),
+  dndStatus: () => invoke<DndStatus>("plugin:dnd|dnd_status"),
+  dndRequestAccess: () => invoke<void>("plugin:dnd|dnd_request_access"),
+  dndEnable: (mode: Exclude<DndMode, "off">, restoreAfterMinutes) =>
+    invoke<DndStatus>("plugin:dnd|dnd_enable", { mode, restoreAfterMinutes }),
+  dndRestore: () => invoke<DndStatus>("plugin:dnd|dnd_restore"),
 
   // ---- Phase 2 ----------------------------------------------------------
 

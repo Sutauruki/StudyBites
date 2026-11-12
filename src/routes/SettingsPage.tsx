@@ -3,6 +3,8 @@ import {
   backend,
   errorText,
   isDesktop,
+  type DndMode,
+  type DndStatus,
   type LicenseStatus,
   type ProviderInfo,
   type QueueStatus,
@@ -78,6 +80,8 @@ export function SettingsPage({
         </div>
       </section>
 
+      <DndSection onError={setError} />
+
       <section className="stack">
         <span className="label">AI keys</span>
         <p className="muted">
@@ -131,6 +135,129 @@ export function SettingsPage({
         </div>
       </section>
     </>
+  );
+}
+
+function DndSection({ onError }: { onError: (message: string) => void }) {
+  const [status, setStatus] = useState<DndStatus | null>(null);
+  const [enabled, setEnabled] = useState(false);
+  const [mode, setMode] = useState<Exclude<DndMode, "off">>("priority");
+  const [waitingForAccess, setWaitingForAccess] = useState(false);
+  const [hint, setHint] = useState<string | null>(null);
+
+  const saveEnabled = async (value: boolean) => {
+    await backend.settingSet("dnd.enabled", String(value));
+    setEnabled(value);
+  };
+
+  useEffect(() => {
+    let active = true;
+    void Promise.all([
+      backend.dndStatus(),
+      backend.settingGet("dnd.enabled"),
+      backend.settingGet("dnd.mode"),
+    ])
+      .then(([nextStatus, savedEnabled, savedMode]) => {
+        if (!active) return;
+        setStatus(nextStatus);
+        setEnabled(savedEnabled === "true");
+        if (savedMode === "alarms" || savedMode === "priority") setMode(savedMode);
+      })
+      .catch((err) => onError(errorText(err)));
+    return () => {
+      active = false;
+    };
+  }, [onError]);
+
+  useEffect(() => {
+    if (!waitingForAccess) return;
+    const onVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      void (async () => {
+        try {
+          const nextStatus = await backend.dndStatus();
+          setStatus(nextStatus);
+          if (nextStatus.granted) {
+            await saveEnabled(true);
+            setHint(null);
+          } else {
+            await saveEnabled(false);
+            setHint("Allow StudyBites in Do Not Disturb access.");
+          }
+        } catch (err) {
+          onError(errorText(err));
+        } finally {
+          setWaitingForAccess(false);
+        }
+      })();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [onError, waitingForAccess]);
+
+  if (!status?.supported) return null;
+
+  return (
+    <section className="card card--pad">
+      <div className="stack">
+        <label className="row">
+          <input
+            type="checkbox"
+            checked={enabled}
+            onChange={async (event) => {
+              const next = event.target.checked;
+              setHint(null);
+              try {
+                if (!next) {
+                  await saveEnabled(false);
+                  return;
+                }
+                const current = await backend.dndStatus();
+                setStatus(current);
+                if (current.granted) {
+                  await saveEnabled(true);
+                } else {
+                  setHint("Allow Do Not Disturb access for StudyBites to use this during study.");
+                  setWaitingForAccess(true);
+                  await backend.dndRequestAccess();
+                }
+              } catch (err) {
+                setEnabled(false);
+                setWaitingForAccess(false);
+                onError(errorText(err));
+              }
+            }}
+            disabled={waitingForAccess}
+          />
+          <span className="field__label">Do Not Disturb during study sessions</span>
+        </label>
+        <p className="muted">
+          StudyBites restores your previous mode when a session ends. Priority only is recommended.
+        </p>
+        <label className="field">
+          <span className="field__label">Do Not Disturb mode</span>
+          <select
+            className="input"
+            value={mode}
+            disabled={!enabled}
+            onChange={async (event) => {
+              const next: Exclude<DndMode, "off"> =
+                event.target.value === "alarms" ? "alarms" : "priority";
+              setMode(next);
+              try {
+                await backend.settingSet("dnd.mode", next);
+              } catch (err) {
+                onError(errorText(err));
+              }
+            }}
+          >
+            <option value="priority">Priority only (recommended)</option>
+            <option value="alarms">Alarms only</option>
+          </select>
+        </label>
+        {hint && <Banner kind="info">{hint}</Banner>}
+      </div>
+    </section>
   );
 }
 

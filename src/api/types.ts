@@ -41,6 +41,14 @@ export interface AppInfo {
   phase: number;
 }
 
+export type DndMode = "off" | "priority" | "alarms";
+
+export interface DndStatus {
+  supported: boolean;
+  granted: boolean;
+  mode: DndMode;
+}
+
 /** Everything the UI is allowed to ask the backend for. */
 /** Phase 3: what the onboarding screens and Settings need to know. */
 export interface LicenseStatus {
@@ -159,6 +167,10 @@ export interface Backend extends Phase2Backend {
 
   settingGet(key: string): Promise<string | null>;
   settingSet(key: string, value: string): Promise<void>;
+  dndStatus(): Promise<DndStatus>;
+  dndRequestAccess(): Promise<void>;
+  dndEnable(mode: Exclude<DndMode, "off">, restoreAfterMinutes: number): Promise<DndStatus>;
+  dndRestore(): Promise<DndStatus>;
 }
 
 // ---- Phase 2 ------------------------------------------------------------

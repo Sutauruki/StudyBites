@@ -1,6 +1,11 @@
 [workspace]
 resolver = "2"
-members = ["crates/license-tool", "crates/studybites-core", "src-tauri"]
+members = [
+    "crates/license-tool",
+    "crates/studybites-core",
+    "src-tauri",
+    "src-tauri/plugins/tauri-plugin-dnd",
+]
 
 [workspace.package]
 version = "0.1.0"

@@ -4,6 +4,8 @@ import type {
   Backend,
   Card,
   DueCounts,
+  DndMode,
+  DndStatus,
   DiagramRect,
   ExplainResult,
   GradeResult,
@@ -491,6 +493,11 @@ export const mockBackend: Backend = {
     write(rows);
     return tick(undefined);
   },
+  dndStatus: () => tick<DndStatus>({ supported: false, granted: false, mode: "off" }),
+  dndRequestAccess: () => tick(undefined),
+  dndEnable: (_mode: Exclude<DndMode, "off">) =>
+    tick<DndStatus>({ supported: false, granted: false, mode: "off" }),
+  dndRestore: () => tick<DndStatus>({ supported: false, granted: false, mode: "off" }),
 
   // ---- Phase 2 ----------------------------------------------------------
   //

@@ -1,0 +1,3 @@
+[default]
+description = "Default permissions for the plugin"
+permissions = ["allow-dnd-status", "allow-dnd-request-access", "allow-dnd-enable", "allow-dnd-restore"]

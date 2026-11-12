@@ -16,6 +16,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dnd::init())
         .setup(|app| {
             let state = AppState::load(app.handle())?;
             if state.is_unlocked() {
