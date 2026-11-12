@@ -49,6 +49,32 @@ export interface DndStatus {
   mode: DndMode;
 }
 
+export type BugReportCategory = "bug" | "confusing" | "idea";
+
+export interface BugReportAttachment {
+  filename: string;
+  mime: "image/jpeg" | "image/png" | "image/webp";
+  data: string;
+}
+
+export interface BugReport {
+  id: string;
+  deviceId: string;
+  title: string;
+  details: string;
+  steps?: string;
+  contact?: string;
+  category: BugReportCategory;
+  diag: Record<string, string>;
+  attachments: BugReportAttachment[];
+}
+
+export type BugReportResult =
+  | { status: "sent" }
+  | { status: "queued" }
+  | { status: "rateLimited" }
+  | { status: "rejected"; message: string };
+
 /** Everything the UI is allowed to ask the backend for. */
 /** Phase 3: what the onboarding screens and Settings need to know. */
 export interface LicenseStatus {
@@ -171,6 +197,9 @@ export interface Backend extends Phase2Backend {
   dndRequestAccess(): Promise<void>;
   dndEnable(mode: Exclude<DndMode, "off">, restoreAfterMinutes: number): Promise<DndStatus>;
   dndRestore(): Promise<DndStatus>;
+  bugReportAvailable(): Promise<boolean>;
+  bugReportSend(report: BugReport): Promise<BugReportResult>;
+  bugReportFlush(): Promise<number>;
 }
 
 // ---- Phase 2 ------------------------------------------------------------

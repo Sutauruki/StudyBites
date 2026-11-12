@@ -198,6 +198,12 @@ StudyBites restores your previous mode when the session ends.
 - **Download original** gives back any file you uploaded, byte for byte.
 - **Check for updates** in Settings tells you when a newer build exists. It
   never downloads or installs anything by itself.
+- **Report a problem** in Settings sends a report only when you choose to
+  submit it. Technical details are optional, screenshots are resized on-device,
+  and reports wait in the encrypted local queue while offline. The diagnostic
+  summary excludes notes, cards, subjects, file names, API keys and licence
+  codes. See [`workers/bug-report/README.md`](workers/bug-report/README.md) for
+  the email service setup.
 
 ### If the daily AI limit is reached
 

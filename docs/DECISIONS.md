@@ -461,3 +461,13 @@ current filter is still the one StudyBites set; a manual change is respected.
 An inexact safety alarm restores the filter at the planned end plus two
 minutes even if the app is killed. The app also restores on session end,
 leaving the session, errors, and startup without a resumable study snapshot.
+
+### D41. Bug reports are opt-in and minimize diagnostics
+
+The app sends a report only after the student submits it. Technical details
+exclude notes, cards, subjects, file names, API keys, and licence codes;
+recent errors are reduced to generic categories. Screenshots are resized
+locally, the encrypted database outbox retries reports while offline, and the
+Worker sends email without persisting report content. The Resend test sender
+is temporary; public launch needs a verified sender or Cloudflare Email
+Service.

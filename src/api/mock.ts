@@ -2,6 +2,8 @@ import type {
   AppInfo,
   Accepted,
   Backend,
+  BugReport,
+  BugReportResult,
   Card,
   DueCounts,
   DndMode,
@@ -498,6 +500,10 @@ export const mockBackend: Backend = {
   dndEnable: (_mode: Exclude<DndMode, "off">) =>
     tick<DndStatus>({ supported: false, granted: false, mode: "off" }),
   dndRestore: () => tick<DndStatus>({ supported: false, granted: false, mode: "off" }),
+  bugReportAvailable: () => tick(true),
+  bugReportSend: (_report: BugReport) =>
+    tick<BugReportResult>({ status: "sent" }),
+  bugReportFlush: () => tick(0),
 
   // ---- Phase 2 ----------------------------------------------------------
   //

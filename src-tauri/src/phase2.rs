@@ -12,10 +12,10 @@ use studybites_core::ai::{AiProvider, ProviderId, SchemeEntry, TopicMatch};
 use studybites_core::embed::{Embedder, LexicalEmbedder};
 use studybites_core::providers::{Attempt, Http, Provider, UreqGetHttp, UreqHttp};
 use studybites_core::{
-    files, ingest, jobs, library, marking, preview, quota, study, subjects, update, Db, Rating,
-    Subject, Topic,
+    bugreport, files, ingest, jobs, library, marking, preview, quota, study, subjects, update, Db,
+    Rating, Subject, Topic,
 };
-use tauri::{Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 type Ipc<T> = Result<T, String>;
 
@@ -24,6 +24,66 @@ fn lock<'a>(state: &'a State<'_, AppState>) -> Result<MutexGuard<'a, Db>, String
         return Err(crate::state::NOT_ACTIVATED.to_string());
     }
     state.db.lock().map_err(|_| LOCK_FAILED.to_string())
+}
+
+fn bug_report_url() -> Option<&'static str> {
+    option_env!("STUDYBITES_BUG_REPORT_URL")
+        .map(str::trim)
+        .filter(|url| !url.is_empty())
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(tag = "status", content = "message", rename_all = "camelCase")]
+pub enum BugReportResult {
+    Sent,
+    Queued,
+    RateLimited,
+    Rejected(String),
+}
+
+#[tauri::command]
+pub fn bug_report_available() -> bool {
+    bug_report_url().is_some()
+}
+
+#[tauri::command]
+pub async fn bug_report_send(app: AppHandle, report: bugreport::BugReport) -> Ipc<BugReportResult> {
+    let url = bug_report_url().ok_or("Bug report sending is not configured in this build.")?;
+    if !app.state::<AppState>().is_unlocked() {
+        return Err(crate::state::NOT_ACTIVATED.to_string());
+    }
+    let report = report.validate().map_err(to_ipc)?;
+    tauri::async_runtime::spawn_blocking(move || match bugreport::send(&UreqHttp, url, &report) {
+        bugreport::SendOutcome::Sent => Ok(BugReportResult::Sent),
+        bugreport::SendOutcome::RateLimited => Ok(BugReportResult::RateLimited),
+        bugreport::SendOutcome::Rejected(message) => Ok(BugReportResult::Rejected(message)),
+        bugreport::SendOutcome::Retryable => {
+            let state = app.state::<AppState>();
+            let db = lock(&state)?;
+            bugreport::outbox_add(&db, &report).map_err(to_ipc)?;
+            Ok(BugReportResult::Queued)
+        }
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+pub async fn bug_report_flush(app: AppHandle) -> Ipc<usize> {
+    let Some(url) = bug_report_url() else {
+        return Ok(0);
+    };
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let _flush = state
+            .bug_report_flush
+            .lock()
+            .map_err(|_| "bug report queue lock failed")?;
+        let db = lock(&state)?;
+        bugreport::flush(&db, &UreqHttp, url).map_err(to_ipc)
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 /// Build the provider list in priority order, skipping any without a key.

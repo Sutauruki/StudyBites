@@ -50,6 +50,7 @@ pub struct AppState {
     pub app_data: std::path::PathBuf,
     pub profile: DeviceProfile,
     pub status: Mutex<Status>,
+    pub bug_report_flush: Mutex<()>,
     /// The EULA is accepted before there is a database to record it in, so
     /// the timestamp waits here until one exists.
     pending_eula: Mutex<Option<String>>,
@@ -125,6 +126,7 @@ impl AppState {
                 device_changed: Vec::new(),
                 problem,
             }),
+            bug_report_flush: Mutex::new(()),
             app_data,
             profile,
             pending_eula: Mutex::new(None),

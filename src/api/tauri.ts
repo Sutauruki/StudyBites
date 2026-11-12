@@ -2,6 +2,8 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   AppInfo,
   Backend,
+  BugReport,
+  BugReportResult,
   CbtResult,
   CbtSummary,
   CbtTest,
@@ -67,6 +69,10 @@ export const tauriBackend: Backend = {
   dndEnable: (mode: Exclude<DndMode, "off">, restoreAfterMinutes) =>
     invoke<DndStatus>("plugin:dnd|dnd_enable", { mode, restoreAfterMinutes }),
   dndRestore: () => invoke<DndStatus>("plugin:dnd|dnd_restore"),
+  bugReportAvailable: () => invoke<boolean>("bug_report_available"),
+  bugReportSend: (report: BugReport) =>
+    invoke<BugReportResult>("bug_report_send", { report }),
+  bugReportFlush: () => invoke<number>("bug_report_flush"),
 
   // ---- Phase 2 ----------------------------------------------------------
 

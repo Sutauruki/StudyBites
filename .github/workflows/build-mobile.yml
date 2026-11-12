@@ -108,6 +108,7 @@ jobs:
       - name: Build release APK
         env:
           STUDYBITES_LICENSE_PUBKEY: ${{ secrets.STUDYBITES_LICENSE_PUBKEY }}
+          STUDYBITES_BUG_REPORT_URL: ${{ vars.STUDYBITES_BUG_REPORT_URL }}
           GRADLE_OPTS: "-Xmx2g -Dorg.gradle.workers.max=1"
           CARGO_BUILD_JOBS: "1"
           CARGO_INCREMENTAL: "0"

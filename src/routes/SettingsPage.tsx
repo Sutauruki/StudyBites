@@ -12,6 +12,7 @@ import {
 } from "../api";
 import type { Theme } from "../App";
 import { Banner, Loading } from "../components/ui";
+import { ReportBugDialog } from "../components/ReportBugDialog";
 import { Prose } from "./OnboardingPage";
 
 const THEMES: Array<{ value: Theme; label: string }> = [
@@ -25,15 +26,18 @@ export function SettingsPage({
   onThemeChange,
   version,
   license,
+  diagnosticView,
 }: {
   theme: Theme;
   onThemeChange: (theme: Theme) => void;
   version: string;
   license: LicenseStatus;
+  diagnosticView: string;
 }) {
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [queue, setQueue] = useState<QueueStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [reportOpen, setReportOpen] = useState(false);
 
   const refresh = useCallback(async (): Promise<ProviderInfo[]> => {
     try {
@@ -124,16 +128,40 @@ export function SettingsPage({
 
       <section className="card card--pad">
         <div className="stack">
+          <span className="label">Help and feedback</span>
+          <p className="muted">
+            Send a problem report with optional screenshots. Nothing is sent until you choose to
+            submit it.
+          </p>
+          <div>
+            <button className="btn" onClick={() => setReportOpen(true)}>
+              Report a problem
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section className="card card--pad">
+        <div className="stack">
           <span className="label">Privacy</span>
           <p className="muted">
-            Your notes stay on this device. There is no telemetry, no analytics and no crash
+            Your notes stay on this device. There is no telemetry, analytics or automatic crash
             reporting. Material is sent only to the AI provider you configure, using your key.
+            Bug reports are sent only when you choose to submit one.
           </p>
           <p className="muted">
             Storage: {isDesktop ? "secure storage on this device" : "browser mock data"}
           </p>
         </div>
       </section>
+      {reportOpen && (
+        <ReportBugDialog
+          version={version}
+          view={diagnosticView}
+          licenseState={license.unlocked ? "unlocked" : "locked"}
+          onClose={() => setReportOpen(false)}
+        />
+      )}
     </>
   );
 }

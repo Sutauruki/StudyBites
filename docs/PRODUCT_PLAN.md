@@ -56,5 +56,5 @@ real-time chat.
 
 - Do Not Disturb is Android-only, opt-in, priority-only by default, and always restored afterwards. iOS, Windows, and web do not support it.
 - Session state must survive Android killing the app.
-- Settings will offer bug reports with a summary, details, and up to three screenshots. The app calls a small Cloudflare Worker, which emails the developer through Resend. No email key ships in the app; reports are rate-limited per device, IP, and day and queued locally while offline.
+- Settings offers opt-in bug reports with a summary, details, and up to three screenshots. The app calls a small Cloudflare Worker, which emails the developer through Resend. No email key ships in the app; reports are rate-limited per device, IP, and day and queued locally while offline. Technical details omit notes, cards, subjects, file names, API keys, and licence codes.
 - Nibble recording is last because phone microphones are weak from the back of a hall. The lecturer-consent QR idea is retained for then.

@@ -19,8 +19,8 @@ fn migrations_bring_schema_to_current_version() {
         )
         .unwrap();
     assert_eq!(
-        tables, 16,
-        "the Section 5 tables, plus EULA acceptance, CBT, resumable sessions, and photo pages"
+        tables, 17,
+        "the Section 5 tables, plus EULA acceptance, CBT, resumable sessions, photo pages, and bug reports"
     );
 }
 
@@ -39,7 +39,7 @@ fn migrations_are_idempotent() {
 }
 
 #[test]
-fn photo_page_migration_preserves_existing_data() {
+fn latest_migration_preserves_existing_data() {
     let mut conn = rusqlite::Connection::open_in_memory().unwrap();
     for (index, migration) in migrations::MIGRATIONS
         .iter()
@@ -81,6 +81,13 @@ fn photo_page_migration_preserves_existing_data() {
             |row| row.get(0),
         )
         .unwrap();
+    let bug_outbox_exists: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'bug_outbox'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
     let material_count: i64 = conn
         .query_row("SELECT count(*) FROM materials", [], |row| row.get(0))
         .unwrap();
@@ -88,6 +95,7 @@ fn photo_page_migration_preserves_existing_data() {
     assert_eq!(subject_name, "MTH 101");
     assert_eq!(session_count, 1);
     assert_eq!(photo_pages_exists, 1);
+    assert_eq!(bug_outbox_exists, 1);
     assert_eq!(material_count, 1);
 }
 

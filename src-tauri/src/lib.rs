@@ -98,6 +98,9 @@ pub fn run() {
             phase2::github_token_set,
             phase2::github_token_present,
             phase2::update_check,
+            phase2::bug_report_available,
+            phase2::bug_report_send,
+            phase2::bug_report_flush,
             // Phase 5 — CBT practice tests
             practice::cbt_available,
             practice::cbt_start,

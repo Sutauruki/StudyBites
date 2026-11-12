@@ -10,6 +10,7 @@ import { StudyPage } from "./routes/StudyPage";
 import { SubjectPage } from "./routes/SubjectPage";
 import { SubjectsPage } from "./routes/SubjectsPage";
 import { clearResume, loadResume, saveResume, type ResumeSnapshot, type ResumeView } from "./lib/resume";
+import { installDiagnosticHandlers } from "./lib/diag";
 
 export type Theme = "system" | "light" | "dark";
 
@@ -34,6 +35,25 @@ export function App() {
   const [license, setLicense] = useState<LicenseStatus | null>(null);
   const [bootstrapped, setBootstrapped] = useState(false);
   const [resume, setResume] = useState<ResumeSnapshot | null>(null);
+
+  useEffect(() => {
+    installDiagnosticHandlers();
+  }, []);
+
+  useEffect(() => {
+    if (!license?.unlocked) return;
+    const flush = () => {
+      if (document.visibilityState !== "visible") return;
+      void backend.bugReportFlush().catch(errorText);
+    };
+    flush();
+    window.addEventListener("online", flush);
+    document.addEventListener("visibilitychange", flush);
+    return () => {
+      window.removeEventListener("online", flush);
+      document.removeEventListener("visibilitychange", flush);
+    };
+  }, [license?.unlocked]);
 
   // The sidebar needs the subject list and the due count; both are cheap
   // database reads, so they refresh whenever the view changes.
@@ -249,6 +269,7 @@ export function App() {
               onThemeChange={changeTheme}
               version={version}
               license={license}
+              diagnosticView={view.name}
             />
           )}
         </div>

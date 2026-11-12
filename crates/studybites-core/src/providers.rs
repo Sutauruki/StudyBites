@@ -28,6 +28,16 @@ pub trait Http: Send + Sync {
         headers: &[(String, String)],
         body: &serde_json::Value,
     ) -> std::result::Result<String, HttpError>;
+
+    fn post_json_with_timeout(
+        &self,
+        url: &str,
+        headers: &[(String, String)],
+        body: &serde_json::Value,
+        _timeout: Duration,
+    ) -> std::result::Result<String, HttpError> {
+        self.post_json(url, headers, body)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -49,8 +59,18 @@ impl Http for UreqHttp {
         headers: &[(String, String)],
         body: &serde_json::Value,
     ) -> std::result::Result<String, HttpError> {
+        self.post_json_with_timeout(url, headers, body, TIMEOUT)
+    }
+
+    fn post_json_with_timeout(
+        &self,
+        url: &str,
+        headers: &[(String, String)],
+        body: &serde_json::Value,
+        timeout: Duration,
+    ) -> std::result::Result<String, HttpError> {
         let agent: ureq::Agent = ureq::Agent::config_builder()
-            .timeout_global(Some(TIMEOUT))
+            .timeout_global(Some(timeout))
             .build()
             .into();
 
