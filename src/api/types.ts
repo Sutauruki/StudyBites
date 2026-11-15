@@ -372,6 +372,22 @@ export interface ProviderInfo {
   selectedModel: string;
 }
 
+export interface ManagedAiUsage {
+  photoPages: number;
+  tutorMessages: number;
+  smartModelMessages: number;
+  markedAnswers: number;
+}
+
+export interface ManagedAiStatus {
+  enabled: boolean;
+  plan: string | null;
+  date: string | null;
+  resetAt: string | null;
+  used: ManagedAiUsage | null;
+  limits: ManagedAiUsage | null;
+}
+
 export interface ExplainResult {
   answer: string;
   sources: string[];
@@ -441,6 +457,7 @@ export interface Phase2Backend {
   queueWake(): Promise<void>;
 
   providersList(): Promise<ProviderInfo[]>;
+  aiStatus(): Promise<ManagedAiStatus>;
   providerKeySet(provider: string, key: string): Promise<void>;
   providerKeyTest(provider: string, key: string): Promise<string[]>;
   providerModels(provider: string): Promise<string[]>;

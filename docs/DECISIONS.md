@@ -489,3 +489,17 @@ confirms $0.15/M cache-miss input and $0.60/M output off-peak, double at peak;
 cache-hit input is cheaper. Gemini remains first in the existing order and is
 still preferred for photo transcription pending a handwriting-quality
 comparison.
+
+### D43. Managed AI is a final fallback through a license-checking Worker
+
+Windows and Android retain their BYO-key providers and only add managed AI as
+the last fallback. The activation code goes from Rust to the Worker; provider
+keys remain Worker secrets. The Worker verifies the signed code, applies
+per-license UTC daily limits, and routes requests to its configured Gemini or
+DeepSeek key. The Settings page can show plan usage without exposing a
+provider key.
+
+This does not independently bind a request to the activation code's device
+fingerprint. Cloudflare KV increments are not atomic, and usage is recorded
+before the upstream call; the counters are best-effort limits, not billing
+records. A later web version with accounts and subscriptions remains separate.

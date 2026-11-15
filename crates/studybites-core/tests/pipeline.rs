@@ -216,6 +216,8 @@ fn ai_errors_route_correctly() {
 fn provider_ids_round_trip() {
     for id in ProviderId::default_order() {
         assert_eq!(ProviderId::parse(id.as_str()), Some(id));
+    }
+    for id in ProviderId::byo_order() {
         assert!(id.key_help_url().starts_with("https://"));
     }
     assert_eq!(ProviderId::parse(" GEMINI "), Some(ProviderId::Gemini));
@@ -223,6 +225,16 @@ fn provider_ids_round_trip() {
     assert_eq!(ProviderId::parse("chatgpt"), None);
     assert_eq!(
         ProviderId::default_order(),
+        vec![
+            ProviderId::Gemini,
+            ProviderId::Groq,
+            ProviderId::OpenRouter,
+            ProviderId::Deepseek,
+            ProviderId::Managed
+        ]
+    );
+    assert_eq!(
+        ProviderId::byo_order(),
         vec![
             ProviderId::Gemini,
             ProviderId::Groq,

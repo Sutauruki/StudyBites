@@ -22,6 +22,7 @@ import type {
   CbtSummary,
   CbtTest,
   LicenseStatus,
+  ManagedAiStatus,
   MarkOutcome,
   QueueStatus,
   SchemeEntry,
@@ -888,6 +889,15 @@ export const mockBackend: Backend = {
         selectedModel: "deepseek-flash",
       },
     ]),
+  aiStatus: () =>
+    tick<ManagedAiStatus>({
+     enabled: false,
+     plan: null,
+     date: null,
+     resetAt: null,
+     used: null,
+     limits: null,
+    }),
   providerKeySet: () =>
     Promise.reject(
       "Keys are stored in secure device storage, which the browser preview has no access to.",

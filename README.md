@@ -213,6 +213,22 @@ Processing pauses and resumes by itself after the limit resets — nothing is
 lost, and nothing has to be re-uploaded. Studying keeps working completely
 offline in the meantime.
 
+### Managed AI
+
+When a build is configured with the StudyBites AI Worker, it is tried after
+your own providers. The app sends its saved activation code to the Worker so
+it can verify the signed license and enforce the daily plan limits. The Worker
+then forwards the prompt or photo to its configured AI provider. The Worker
+cannot attest the device fingerprint, so this is not an additional device
+lock. Builds without the Worker URL continue to use only your own provider
+keys.
+
+The Worker uses Cloudflare KV for usage counters. They are not atomic under
+concurrent requests, and a request is counted before its upstream call, so
+these limits are best-effort usage controls, not billing records. See
+[`workers/ai-proxy/README.md`](workers/ai-proxy/README.md) for deployment,
+plan administration and setup.
+
 ### On the database key
 
 Phase 1 uses a fixed development key that lives in the source. It is **not** a
@@ -300,4 +316,6 @@ cracking it is more work than the app costs.
 
 No telemetry, no analytics, no crash reporting. Nothing leaves the device in
 Phase 1. From Phase 2, material is sent only to the AI provider you configure
-with your own API key.
+with your own API key, or through StudyBites AI when enabled in the build. The
+managed Worker verifies the activation code and forwards requests to its
+configured provider; see the Managed AI section above.

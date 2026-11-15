@@ -5,6 +5,7 @@
 //! onto a worker rather than blocking the window.
 
 use crate::keys;
+use crate::managed_ai;
 use crate::state::{to_ipc, AppState, LOCK_FAILED};
 use base64::Engine as _;
 use std::sync::MutexGuard;
@@ -93,9 +94,13 @@ fn model_key(id: ProviderId) -> String {
     format!("ai.model.{}", id.as_str())
 }
 
-fn providers<'a>(db: &Db, http: &'a dyn Http) -> Ipc<Vec<Provider<'a>>> {
+fn providers<'a>(
+    db: &Db,
+    app_data: &std::path::Path,
+    http: &'a dyn Http,
+) -> Ipc<Vec<Provider<'a>>> {
     let mut list = Vec::new();
-    for id in ProviderId::default_order() {
+    for id in ProviderId::byo_order() {
         let Some(key) = keys::provider_key(db, id)? else {
             continue;
         };
@@ -110,6 +115,9 @@ fn providers<'a>(db: &Db, http: &'a dyn Http) -> Ipc<Vec<Provider<'a>>> {
             list.push(provider);
         }
     }
+    if let Some(provider) = managed_ai::provider(app_data, http)? {
+        list.push(provider);
+    }
     Ok(list)
 }
 
@@ -119,11 +127,12 @@ fn require_providers<'a>(
 ) -> Ipc<Vec<Provider<'a>>> {
     let list = {
         let db = lock(state)?;
-        providers(&db, http)?
+        providers(&db, &state.app_data, http)?
     };
     if list.is_empty() {
         return Err(
-            "No AI provider is ready. Open Settings, add a key, then choose a model for it.".into(),
+            "No AI provider is ready. Add a provider key in Settings or configure StudyBites AI for this build."
+                .into(),
         );
     }
     Ok(list)
@@ -855,7 +864,7 @@ fn chosen_model(db: &Db, id: ProviderId) -> Ipc<String> {
 pub fn providers_list(state: State<AppState>) -> Ipc<Vec<ProviderInfo>> {
     let db = lock(&state)?;
     let configured = keys::configured(&db)?;
-    ProviderId::default_order()
+    ProviderId::byo_order()
         .into_iter()
         .map(|id| {
             Ok(ProviderInfo {
@@ -865,6 +874,7 @@ pub fn providers_list(state: State<AppState>) -> Ipc<Vec<ProviderInfo>> {
                     ProviderId::Groq => "Groq".into(),
                     ProviderId::OpenRouter => "OpenRouter".into(),
                     ProviderId::Deepseek => "DeepSeek".into(),
+                    ProviderId::Managed => unreachable!(),
                 },
                 configured: configured.contains(&id),
                 help_url: id.key_help_url().to_string(),
@@ -873,6 +883,12 @@ pub fn providers_list(state: State<AppState>) -> Ipc<Vec<ProviderInfo>> {
             })
         })
         .collect()
+}
+
+#[tauri::command]
+pub fn ai_status(state: State<AppState>) -> Ipc<managed_ai::Status> {
+    let _db = lock(&state)?;
+    managed_ai::status(&UreqGetHttp, &state.app_data)
 }
 
 /// The models a provider currently offers, asked of the provider itself.
@@ -912,6 +928,9 @@ pub async fn provider_key_test(
 #[tauri::command]
 pub fn provider_model_set(state: State<AppState>, provider: String, model: String) -> Ipc<()> {
     let id = ProviderId::parse(&provider).ok_or("that is not a provider StudyBites knows")?;
+    if id == ProviderId::Managed {
+        return Err("StudyBites AI chooses its own model.".into());
+    }
     let db = lock(&state)?;
     db.set_setting(&model_key(id), model.trim()).map_err(to_ipc)
 }

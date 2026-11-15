@@ -2,8 +2,8 @@
 
 ## Confirmed products
 
-- Windows and Android apps are offline-first, use a one-time license, and let students paste their own AI keys into the app. The price is not set yet.
-- A later web version will use accounts, subscriptions, and managed AI. In-app key pasting stays; a managed "StudyBites AI" provider will be added beside it.
+- Windows and Android apps are offline-first, use a one-time license, and let students paste their own AI keys into the app. An optional managed "StudyBites AI" Worker can serve as the last provider fallback when the build is configured for it. The price is not set yet.
+- A later web version remains a separate product using accounts and subscriptions. In-app key pasting stays; the managed AI Worker does not make the desktop/mobile apps account-based.
 
 ## Daily limits and cost target
 
@@ -31,6 +31,7 @@ and offline study use no AI and are uncapped.
   quality has been compared.
 - Managed plans use a paid key. Model names remain settings because Google retires models.
 - A bought key never ships in the app. It lives as a Cloudflare Worker secret, and the app calls the Worker with the activation code.
+- The Worker verifies the signed activation payload and applies per-license UTC daily limits. It does not attest the device fingerprint; Cloudflare KV counters are best-effort under concurrent requests and are not billing records.
 
 ## Web stack
 

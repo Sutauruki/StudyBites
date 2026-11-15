@@ -8,6 +8,7 @@
 //! would only trip the limits sooner.
 
 use crate::keys;
+use crate::managed_ai;
 use crate::state::AppState;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
@@ -125,7 +126,7 @@ fn drain(app: &AppHandle, db: &mut studybites_core::Db) {
         let http = UreqHttp;
         let providers: Vec<Provider<'_>> = {
             let mut list = Vec::new();
-            for id in ProviderId::default_order() {
+            for id in ProviderId::byo_order() {
                 let key = match keys::provider_key(db, id) {
                     Ok(Some(key)) => key,
                     Ok(None) => continue,
@@ -150,6 +151,14 @@ fn drain(app: &AppHandle, db: &mut studybites_core::Db) {
                 let provider = Provider::new(id, key, &http).with_model(chosen);
                 if !provider.model.trim().is_empty() {
                     list.push(provider);
+                }
+            }
+            match managed_ai::provider(&state.app_data, &http) {
+                Ok(Some(provider)) => list.push(provider),
+                Ok(None) => {}
+                Err(error) => {
+                    eprintln!("StudyBites could not configure managed AI: {error}");
+                    return;
                 }
             }
             list

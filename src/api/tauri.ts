@@ -10,6 +10,7 @@ import type {
   DndMode,
   DndStatus,
   LicenseStatus,
+  ManagedAiStatus,
   MarkOutcome,
   NewTopic,
   Subject,
@@ -132,6 +133,7 @@ export const tauriBackend: Backend = {
   queueRetry: () => invoke("queue_retry"),
 
   providersList: () => invoke("providers_list"),
+  aiStatus: () => invoke<ManagedAiStatus>("ai_status"),
   providerKeySet: async (provider, key) => {
     await invoke("provider_key_set", { provider, key });
     await invoke("queue_wake");

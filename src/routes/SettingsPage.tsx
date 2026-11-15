@@ -6,6 +6,7 @@ import {
   type DndMode,
   type DndStatus,
   type LicenseStatus,
+  type ManagedAiStatus,
   type ProviderInfo,
   type QueueStatus,
   type UpdateStatus,
@@ -36,6 +37,9 @@ export function SettingsPage({
 }) {
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [queue, setQueue] = useState<QueueStatus | null>(null);
+  const [managedAi, setManagedAi] = useState<ManagedAiStatus | null>(null);
+  const [managedAiError, setManagedAiError] = useState<string | null>(null);
+  const [managedAiBusy, setManagedAiBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reportOpen, setReportOpen] = useState(false);
 
@@ -51,9 +55,22 @@ export function SettingsPage({
     }
   }, []);
 
+  const refreshManagedAi = useCallback(async () => {
+    setManagedAiBusy(true);
+    try {
+      setManagedAi(await backend.aiStatus());
+      setManagedAiError(null);
+    } catch (err) {
+      setManagedAiError(errorText(err));
+    } finally {
+      setManagedAiBusy(false);
+    }
+  }, []);
+
   useEffect(() => {
     void refresh().catch(() => {});
-  }, [refresh]);
+    void refreshManagedAi();
+  }, [refresh, refreshManagedAi]);
 
   return (
     <>
@@ -89,8 +106,10 @@ export function SettingsPage({
       <section className="stack">
         <span className="label">AI keys</span>
         <p className="muted">
-          StudyBites uses your own API key, stored securely on this device and sent only to the
-          provider you choose. Gemini is tried first, then the others if it runs out for the day.
+          Your own keys are stored securely on this device and sent only to their provider. If
+          StudyBites AI is available, it can also be used as a fallback; its Worker checks your
+          activation code and forwards the request to its configured AI provider. Gemini is tried
+          first, then the others if they run out.
         </p>
         <div className="card list">
           {providers.map((provider) => (
@@ -98,6 +117,13 @@ export function SettingsPage({
           ))}
         </div>
       </section>
+
+      <ManagedAiSection
+        status={managedAi}
+        error={managedAiError}
+        busy={managedAiBusy}
+        onRefresh={() => void refreshManagedAi()}
+      />
 
       {queue && queue.quota.length > 0 && (
         <section className="stack">
@@ -146,8 +172,10 @@ export function SettingsPage({
           <span className="label">Privacy</span>
           <p className="muted">
             Your notes stay on this device. There is no telemetry, analytics or automatic crash
-            reporting. Material is sent only to the AI provider you configure, using your key.
-            Bug reports are sent only when you choose to submit one.
+            reporting. Material is sent only when you request AI: to the provider you configure
+            with your key, or through StudyBites AI when available. The managed Worker receives
+            your activation code to apply plan limits and forwards the request to its configured
+            provider. Bug reports are sent only when you choose to submit one.
           </p>
           <p className="muted">
             Storage: {isDesktop ? "secure storage on this device" : "browser mock data"}
@@ -163,6 +191,81 @@ export function SettingsPage({
         />
       )}
     </>
+  );
+}
+
+function ManagedAiSection({
+  status,
+  error,
+  busy,
+  onRefresh,
+}: {
+  status: ManagedAiStatus | null;
+  error: string | null;
+  busy: boolean;
+  onRefresh: () => void;
+}) {
+  return (
+    <section className="card card--pad">
+      <div className="stack">
+        <div className="row">
+          <span className="label">StudyBites AI</span>
+          <button className="btn" disabled={busy} onClick={onRefresh}>
+            {busy ? "Checking…" : "Refresh usage"}
+          </button>
+        </div>
+        {error ? (
+          <Banner kind="error">{error}</Banner>
+        ) : status?.enabled && status.used && status.limits ? (
+          <>
+            <p className="muted">
+              Plan: {status.plan ?? "unknown"} · usage resets{" "}
+              {status.resetAt ? new Date(status.resetAt).toLocaleString() : "at midnight UTC"}.
+            </p>
+            <div className="list">
+              <UsageRow
+                label="Photo pages"
+                used={status.used.photoPages}
+                limit={status.limits.photoPages}
+              />
+              <UsageRow
+                label="Tutor messages"
+                used={status.used.tutorMessages}
+                limit={status.limits.tutorMessages}
+              />
+              <UsageRow
+                label="Smart-model messages"
+                used={status.used.smartModelMessages}
+                limit={status.limits.smartModelMessages}
+              />
+              <UsageRow
+                label="Marked answers"
+                used={status.used.markedAnswers}
+                limit={status.limits.markedAnswers}
+              />
+            </div>
+          </>
+        ) : (
+          <p className="muted">
+            Managed AI is unavailable for this app right now. You can still add your own provider
+            key above.
+          </p>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function UsageRow({ label, used, limit }: { label: string; used: number; limit: number }) {
+  return (
+    <div className="list__item list__item--static">
+      <div className="list__text">
+        <div className="list__title">{label}</div>
+        <div className="list__meta">
+          {used} of {limit} today
+        </div>
+      </div>
+    </div>
   );
 }
 

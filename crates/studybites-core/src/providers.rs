@@ -262,6 +262,42 @@ impl Chat<'_> {
             .ok_or_else(|| AiError::BadResponse("response had no message content".into()))
     }
 
+    fn managed(
+        &self,
+        url: &str,
+        task: &str,
+        system: &str,
+        user_content: serde_json::Value,
+        temperature: f64,
+    ) -> std::result::Result<String, AiError> {
+        let body = serde_json::json!({
+            "task": task,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user_content},
+            ],
+            "temperature": temperature,
+        });
+        let headers = vec![
+            (
+                "Authorization".to_string(),
+                format!("Bearer {}", self.api_key),
+            ),
+            ("Content-Type".to_string(), "application/json".to_string()),
+        ];
+        let raw = self
+            .http
+            .post_json(url, &headers, &body)
+            .map_err(|error| classify_for_provider(error, self.provider, self.model))?;
+        let parsed: serde_json::Value = serde_json::from_str(&raw)
+            .map_err(|e| AiError::BadResponse(format!("response was not JSON: {e}")))?;
+        parsed
+            .pointer("/choices/0/message/content")
+            .and_then(|value| value.as_str())
+            .map(str::to_string)
+            .ok_or_else(|| AiError::BadResponse("response had no message content".into()))
+    }
+
     /// Gemini's generateContent, which takes the key in a header and wraps the
     /// system prompt in its own field.
     /// `search` turns on Gemini's search grounding. That cannot be combined
@@ -384,6 +420,7 @@ pub struct Provider<'a> {
     pub api_key: String,
     pub model: String,
     pub http: &'a dyn Http,
+    managed_endpoint: Option<String>,
 }
 
 impl<'a> Provider<'a> {
@@ -396,6 +433,7 @@ impl<'a> Provider<'a> {
             ProviderId::Groq => "openai/gpt-oss-20b",
             ProviderId::OpenRouter => "google/gemma-4-26b-a4b-it:free",
             ProviderId::Deepseek => "deepseek-flash",
+            ProviderId::Managed => "",
         }
     }
 
@@ -405,6 +443,21 @@ impl<'a> Provider<'a> {
             api_key,
             model: Self::default_model(id).to_string(),
             http,
+            managed_endpoint: None,
+        }
+    }
+
+    pub fn managed(
+        endpoint: impl Into<String>,
+        activation_code: String,
+        http: &'a dyn Http,
+    ) -> Self {
+        Self {
+            id: ProviderId::Managed,
+            api_key: activation_code,
+            model: "managed".into(),
+            http,
+            managed_endpoint: Some(endpoint.into()),
         }
     }
 
@@ -438,17 +491,19 @@ impl<'a> Provider<'a> {
                 model.trim(),
                 "deepseek-flash" | "deepseek-v4-flash" | "deepseek-v4-flash-vision-exp"
             ),
+            ProviderId::Managed => true,
         }
     }
 
-    fn chat(&self, system: &str, user: &str) -> std::result::Result<String, AiError> {
-        self.chat_maybe_search(system, user, false)
+    fn chat(&self, task: &str, system: &str, user: &str) -> std::result::Result<String, AiError> {
+        self.chat_maybe_search(task, system, user, false)
     }
 
     /// Only Gemini can ground in a search; the others answer from the model
     /// alone, which is still better than refusing.
     fn chat_maybe_search(
         &self,
+        task: &str,
         system: &str,
         user: &str,
         search: bool,
@@ -462,6 +517,19 @@ impl<'a> Provider<'a> {
             model: &self.model,
             provider: self.id,
         };
+        if self.id == ProviderId::Managed {
+            let endpoint = self
+                .managed_endpoint
+                .as_deref()
+                .ok_or_else(|| AiError::Auth("managed AI is not configured".into()))?;
+            return chat.managed(
+                endpoint,
+                task,
+                system,
+                serde_json::Value::String(user.to_string()),
+                0.2,
+            );
+        }
         match self.id {
             ProviderId::Gemini => chat.gemini_with(system, user, search),
             ProviderId::Groq => chat.openai_style(
@@ -477,6 +545,7 @@ impl<'a> Provider<'a> {
             ProviderId::Deepseek => {
                 chat.openai_style("https://api.deepseek.com/chat/completions", system, user)
             }
+            ProviderId::Managed => unreachable!(),
         }
     }
 }
@@ -494,7 +563,7 @@ impl AiProvider for Provider<'_> {
             request.heading.as_deref(),
             &request.text,
         );
-        let raw = self.chat(prompts::distill_system(request.source), &user)?;
+        let raw = self.chat("tutor", prompts::distill_system(request.source), &user)?;
         ai::parse_note(&raw).map_err(|e| AiError::BadResponse(e.to_string()))
     }
 
@@ -546,6 +615,26 @@ impl AiProvider for Provider<'_> {
                 image,
                 mime,
             )?,
+            ProviderId::Managed => {
+                let endpoint = self
+                    .managed_endpoint
+                    .as_deref()
+                    .ok_or_else(|| AiError::Auth("managed AI is not configured".into()))?;
+                let encoded = base64::engine::general_purpose::STANDARD.encode(image);
+                chat.managed(
+                    endpoint,
+                    "photo",
+                    prompts::TRANSCRIBE_SYSTEM,
+                    serde_json::json!([
+                        {"type": "text", "text": prompts::transcribe_user()},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": format!("data:{mime};base64,{encoded}")}
+                        }
+                    ]),
+                    0.0,
+                )?
+            }
         };
         ai::parse_transcript(&raw).map_err(|error| AiError::BadResponse(error.to_string()))
     }
@@ -554,7 +643,7 @@ impl AiProvider for Provider<'_> {
         &self,
         note: &DistilledNote,
     ) -> std::result::Result<Vec<GeneratedCard>, AiError> {
-        let raw = self.chat(prompts::CARDS_SYSTEM, &prompts::cards_user(note))?;
+        let raw = self.chat("tutor", prompts::CARDS_SYSTEM, &prompts::cards_user(note))?;
         let (cards, _rejected) =
             ai::parse_cards(&raw).map_err(|e| AiError::BadResponse(e.to_string()))?;
         if cards.is_empty() {
@@ -578,6 +667,7 @@ impl AiProvider for Provider<'_> {
             });
         }
         let raw = self.chat(
+            "tutor",
             prompts::TOPIC_MATCH_SYSTEM,
             &prompts::topic_match_user(text, topics),
         )?;
@@ -596,7 +686,7 @@ impl AiProvider for Provider<'_> {
     }
 
     fn parse_scheme(&self, text: &str) -> std::result::Result<Vec<SchemeEntry>, AiError> {
-        let raw = self.chat(prompts::SCHEME_SYSTEM, &prompts::scheme_user(text))?;
+        let raw = self.chat("tutor", prompts::SCHEME_SYSTEM, &prompts::scheme_user(text))?;
         let value = ai::extract_json(&raw).map_err(|e| AiError::BadResponse(e.to_string()))?;
         let array = match value {
             serde_json::Value::Array(items) => items,
@@ -630,6 +720,7 @@ impl AiProvider for Provider<'_> {
         with_search: bool,
     ) -> std::result::Result<TopicPreview, AiError> {
         let raw = self.chat_maybe_search(
+            "smart",
             prompts::PREVIEW_SYSTEM,
             &prompts::preview_user(subject, recent_topics, next_topic),
             with_search,
@@ -643,6 +734,7 @@ impl AiProvider for Provider<'_> {
         notes: &[DistilledNote],
     ) -> std::result::Result<String, AiError> {
         let raw = self.chat(
+            "tutor",
             prompts::EXPLAIN_SYSTEM,
             &prompts::explain_user(question, notes),
         )?;
@@ -662,6 +754,7 @@ impl AiProvider for Provider<'_> {
         typed: &str,
     ) -> std::result::Result<crate::marking::Mark, AiError> {
         let raw = self.chat(
+            "mark",
             prompts::MARK_SYSTEM,
             &prompts::mark_user(question, expected, typed),
         )?;
@@ -762,6 +855,11 @@ pub fn list_models(
             "https://api.deepseek.com/models".to_string(),
             vec![("Authorization".to_string(), format!("Bearer {api_key}"))],
         ),
+        ProviderId::Managed => {
+            return Err(AiError::Unsupported(
+                "managed AI does not expose a user-selectable model list".into(),
+            ));
+        }
     };
 
     // A null body means GET to the client the app supplies.

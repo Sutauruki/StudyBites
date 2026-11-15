@@ -1,5 +1,6 @@
 mod commands;
 mod keys;
+mod managed_ai;
 mod phase2;
 mod practice;
 mod state;
@@ -92,6 +93,7 @@ pub fn run() {
             phase2::queue_retry,
             phase2::queue_wake,
             phase2::providers_list,
+            phase2::ai_status,
             phase2::provider_key_set,
             phase2::provider_models,
             phase2::provider_key_test,

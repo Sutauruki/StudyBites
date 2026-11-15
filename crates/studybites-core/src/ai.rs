@@ -289,6 +289,7 @@ pub enum ProviderId {
     Groq,
     OpenRouter,
     Deepseek,
+    Managed,
 }
 
 impl ProviderId {
@@ -298,6 +299,7 @@ impl ProviderId {
             Self::Groq => "groq",
             Self::OpenRouter => "openrouter",
             Self::Deepseek => "deepseek",
+            Self::Managed => "managed",
         }
     }
 
@@ -307,13 +309,21 @@ impl ProviderId {
             "groq" => Some(Self::Groq),
             "openrouter" => Some(Self::OpenRouter),
             "deepseek" => Some(Self::Deepseek),
+            "managed" => Some(Self::Managed),
             _ => None,
         }
     }
 
-    /// Default priority: Gemini first, per the brief.
-    pub fn default_order() -> Vec<Self> {
+    /// BYO-key providers, in their existing default priority order.
+    pub fn byo_order() -> Vec<Self> {
         vec![Self::Gemini, Self::Groq, Self::OpenRouter, Self::Deepseek]
+    }
+
+    /// All providers, with managed AI as the final fallback.
+    pub fn default_order() -> Vec<Self> {
+        let mut providers = Self::byo_order();
+        providers.push(Self::Managed);
+        providers
     }
 
     /// Where the user gets a key, shown in Settings.
@@ -323,6 +333,7 @@ impl ProviderId {
             Self::Groq => "https://console.groq.com/keys",
             Self::OpenRouter => "https://openrouter.ai/keys",
             Self::Deepseek => "https://platform.deepseek.com/api_keys",
+            Self::Managed => "",
         }
     }
 }

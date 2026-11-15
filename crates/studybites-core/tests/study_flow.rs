@@ -682,6 +682,38 @@ fn deepseek_model_list_uses_the_authenticated_models_endpoint() {
 }
 
 #[test]
+fn managed_provider_sends_license_bearer_and_worker_task_envelopes() {
+    let http = FakeHttp::new(vec![
+        Ok(openai_body("A short explanation.")),
+        Ok(openai_body(
+            r#"{"text":"Notes text","uncertain":[],"blank":false}"#,
+        )),
+    ]);
+    let provider = Provider::managed(
+        "https://worker.example/v1/ai",
+        "activation-code".into(),
+        &http,
+    );
+
+    studybites_core::AiProvider::explain(&provider, "why?", &[]).unwrap();
+    assert_eq!(http.url(0), "https://worker.example/v1/ai");
+    assert_eq!(
+        http.header(0, "Authorization").as_deref(),
+        Some("Bearer activation-code")
+    );
+    let request = http.body(0);
+    assert_eq!(request["task"], "tutor");
+    assert!(request.get("model").is_none());
+    assert!(!request.to_string().contains("activation-code"));
+
+    studybites_core::AiProvider::transcribe_page(&provider, b"\xff\xd8\xffimage", "image/jpeg")
+        .unwrap();
+    let request = http.body(1);
+    assert_eq!(request["task"], "photo");
+    assert_eq!(request["messages"][1]["content"][1]["type"], "image_url");
+}
+
+#[test]
 fn photo_upload_is_deduplicated_transcribed_and_queued_as_student_notes() {
     let dir = tempfile::tempdir().unwrap();
     let mut db = db();
