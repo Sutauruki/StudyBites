@@ -19,8 +19,8 @@ fn migrations_bring_schema_to_current_version() {
         )
         .unwrap();
     assert_eq!(
-        tables, 14,
-        "the Section 5 tables, plus EULA acceptance and the CBT tables"
+        tables, 17,
+        "the Section 5 tables, plus EULA acceptance, CBT, resumable sessions, photo pages, and bug reports"
     );
 }
 
@@ -28,10 +28,75 @@ fn migrations_bring_schema_to_current_version() {
 fn migrations_are_idempotent() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("sb.db");
+    {
+        let db = Db::open(&path, DEV_KEY).unwrap();
+        subjects::create(&db, "MTH 101").unwrap();
+    }
     for _ in 0..3 {
         let db = Db::open(&path, DEV_KEY).unwrap();
         assert_eq!(db.schema_version().unwrap(), migrations::SCHEMA_VERSION);
     }
+}
+
+#[test]
+fn latest_migration_preserves_existing_data() {
+    let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+    for (index, migration) in migrations::MIGRATIONS
+        .iter()
+        .take(migrations::MIGRATIONS.len() - 1)
+        .enumerate()
+    {
+        conn.execute_batch(migration).unwrap();
+        conn.execute_batch(&format!("PRAGMA user_version = {}", index + 1))
+            .unwrap();
+    }
+    conn.execute("INSERT INTO subjects(name) VALUES ('MTH 101')", [])
+        .unwrap();
+    conn.execute(
+        "INSERT INTO sessions(subject_id, planned_minutes) VALUES (1, 10)",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO materials(subject_id, original_filename, mime, size, sha256)
+         VALUES (1, 'week1.pdf', 'application/pdf', 100, 'abc')",
+        [],
+    )
+    .unwrap();
+
+    migrations::migrate(&mut conn).unwrap();
+
+    let subject_name: String = conn
+        .query_row("SELECT name FROM subjects WHERE id = 1", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    let session_count: i64 = conn
+        .query_row("SELECT count(*) FROM sessions", [], |row| row.get(0))
+        .unwrap();
+    let photo_pages_exists: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'material_pages'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let bug_outbox_exists: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'bug_outbox'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let material_count: i64 = conn
+        .query_row("SELECT count(*) FROM materials", [], |row| row.get(0))
+        .unwrap();
+
+    assert_eq!(subject_name, "MTH 101");
+    assert_eq!(session_count, 1);
+    assert_eq!(photo_pages_exists, 1);
+    assert_eq!(bug_outbox_exists, 1);
+    assert_eq!(material_count, 1);
 }
 
 #[test]

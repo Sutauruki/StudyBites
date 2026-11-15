@@ -8,6 +8,7 @@
 //! would only trip the limits sooner.
 
 use crate::keys;
+use crate::managed_ai;
 use crate::state::AppState;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
@@ -125,7 +126,7 @@ fn drain(app: &AppHandle, db: &mut studybites_core::Db) {
         let http = UreqHttp;
         let providers: Vec<Provider<'_>> = {
             let mut list = Vec::new();
-            for id in ProviderId::default_order() {
+            for id in ProviderId::byo_order() {
                 let key = match keys::provider_key(db, id) {
                     Ok(Some(key)) => key,
                     Ok(None) => continue,
@@ -152,23 +153,37 @@ fn drain(app: &AppHandle, db: &mut studybites_core::Db) {
                     list.push(provider);
                 }
             }
+            match managed_ai::provider(&state.app_data, &http) {
+                Ok(Some(provider)) => list.push(provider),
+                Ok(None) => {}
+                Err(error) => {
+                    eprintln!("StudyBites could not configure managed AI: {error}");
+                    return;
+                }
+            }
             list
         };
 
         if providers.is_empty() {
-            // Nothing can be processed without a key; the queue simply waits.
+            if let Err(error) = ingest::pause_waiting_photo_jobs(db) {
+                eprintln!("StudyBites could not pause photo transcription jobs: {error}");
+            }
             break;
         }
 
-        let outcome = ingest::process_one(db, &providers, &embedder);
+        let file_key = state.file_key();
+        let outcome = ingest::process_one(db, &providers, &embedder, &state.app_data, &file_key);
 
         match outcome {
             Ok(ingest::Processed::Idle) => break,
-            // A pause means every provider is out of quota; stop rather than
-            // spin, and let the next wake-up try again.
+            // A pause means the job needs quota or configuration to change;
+            // stop rather than spin and let the next wake-up try again.
             Ok(ingest::Processed::Paused { .. }) => break,
             Ok(_) => report(app),
-            Err(_) => break,
+            Err(error) => {
+                eprintln!("StudyBites could not process an ingestion job: {error}");
+                break;
+            }
         }
     }
 

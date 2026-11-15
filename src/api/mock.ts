@@ -1,11 +1,19 @@
 import type {
   AppInfo,
+  Accepted,
   Backend,
+  BugReport,
+  BugReportResult,
   Card,
   DueCounts,
+  DndMode,
+  DndStatus,
+  DiagramRect,
   ExplainResult,
   GradeResult,
   Material,
+  MaterialPage,
+  Note,
   NewTopic,
   ProviderInfo,
   QueueCounts,
@@ -14,6 +22,7 @@ import type {
   CbtSummary,
   CbtTest,
   LicenseStatus,
+  ManagedAiStatus,
   MarkOutcome,
   QueueStatus,
   SchemeEntry,
@@ -44,7 +53,21 @@ interface Rows {
   topics: Array<Omit<Topic, "children">>;
   settings: Record<string, string>;
   materials: Material[];
+  pages: MaterialPage[];
+  notes: Note[];
   cards: Array<Card & { due: number; isNewCard: boolean }>;
+  sessions: MockSession[];
+}
+
+interface MockSession {
+  id: number;
+  subjectId: number | null;
+  plannedMinutes: number;
+  cardIds: number[];
+  doneCardIds: number[];
+  cardsDone: number;
+  startedAt: number;
+  endedAt: number | null;
 }
 
 const empty = (): Rows => ({
@@ -53,7 +76,10 @@ const empty = (): Rows => ({
   topics: [],
   settings: {},
   materials: [],
+  pages: [],
+  notes: [],
   cards: [],
+  sessions: [],
 });
 
 function read(): Rows {
@@ -470,6 +496,15 @@ export const mockBackend: Backend = {
     write(rows);
     return tick(undefined);
   },
+  dndStatus: () => tick<DndStatus>({ supported: false, granted: false, mode: "off" }),
+  dndRequestAccess: () => tick(undefined),
+  dndEnable: (_mode: Exclude<DndMode, "off">) =>
+    tick<DndStatus>({ supported: false, granted: false, mode: "off" }),
+  dndRestore: () => tick<DndStatus>({ supported: false, granted: false, mode: "off" }),
+  bugReportAvailable: () => tick(true),
+  bugReportSend: (_report: BugReport) =>
+    tick<BugReportResult>({ status: "sent" }),
+  bugReportFlush: () => tick(0),
 
   // ---- Phase 2 ----------------------------------------------------------
   //
@@ -480,6 +515,57 @@ export const mockBackend: Backend = {
 
   materialUpload: () =>
     Promise.reject("Uploading needs the desktop app — this is the browser preview."),
+  materialUploadPhotos: (subjectId, topicId, pages) => {
+    if (pages.length < 1 || pages.length > 20) throw "Choose between 1 and 20 photos.";
+    if (pages.some((page) => page.length === 0 || page.length > 4 * 1024 * 1024)) {
+      throw "Each photo must be 4 MB or smaller. Choose fewer or smaller photos.";
+    }
+    if (pages.some((page) => !hasSupportedImageMagic(page))) {
+      throw "Each photo must be a JPEG, PNG or WebP image.";
+    }
+    const rows = read();
+    findSubject(rows, subjectId);
+    const fingerprint = photoFingerprint(pages);
+    const duplicate = rows.materials.find(
+      (material) => material.subjectId === subjectId && material.sha256 === fingerprint,
+    );
+    if (duplicate) {
+      return tick<Accepted>({ material: duplicate, chunkCount: 0, duplicateOf: duplicate.id });
+    }
+    const material: Material = {
+      id: rows.nextId++,
+      subjectId,
+      topicId,
+      originalFilename: `Notes photos (${pages.length} pages)`,
+      mime: "image/jpeg",
+      size: pages.reduce((sum, page) => sum + page.length, 0),
+      sha256: fingerprint,
+      coldPath: null,
+      uploadedAt: new Date().toISOString(),
+      status: "review",
+      error: null,
+      noteCount: 0,
+      cardCount: 0,
+    };
+    rows.materials.push(material);
+    pages.forEach((_page, pageIndex) => {
+      rows.pages.push({
+        id: rows.nextId++,
+        materialId: material.id,
+        pageIndex,
+        sha256: `${fingerprint}-${pageIndex}`,
+        coldPath: null,
+        transcript: "After class: mitochondria [?] energy from glucose [?].",
+        uncertain: ["[?]", "[?]"],
+        diagrams:
+          pageIndex === 0 ? [{ x: 0.15, y: 0.2, width: 0.4, height: 0.3 }] : [],
+        status: "done",
+        error: null,
+      });
+    });
+    write(rows);
+    return tick<Accepted>({ material, chunkCount: pages.length, duplicateOf: null });
+  },
   filePreviewText: () =>
     Promise.reject("Reading files needs the desktop app — this is the browser preview."),
   materialsList: (subjectId) =>
@@ -495,11 +581,87 @@ export const mockBackend: Backend = {
   materialDelete: (id) => {
     const rows = read();
     rows.materials = rows.materials.filter((m) => m.id !== id);
+    rows.pages = rows.pages.filter((page) => page.materialId !== id);
+    rows.notes = rows.notes.filter((note) => note.materialId !== id);
     write(rows);
     return tick(undefined);
   },
   materialSaveOriginal: () =>
     Promise.reject("Saving files needs the desktop app — this is the browser preview."),
+  materialPagesGet: (materialId) =>
+    tick(read().pages.filter((page) => page.materialId === materialId)),
+  materialPageImageGet: () => tick(""),
+  materialPageTextSet: (pageId, text) => {
+    if (text.length > 20_000) throw "A page transcript must be 20,000 characters or fewer.";
+    const rows = read();
+    const page = rows.pages.find((item) => item.id === pageId);
+    if (!page) throw `page ${pageId} was not found`;
+    page.transcript = text;
+    write(rows);
+    return tick(page);
+  },
+  materialDiagramsSet: (pageId, diagrams: DiagramRect[]) => {
+    const rows = read();
+    const page = rows.pages.find((item) => item.id === pageId);
+    if (!page) throw `page ${pageId} was not found`;
+    if (
+      diagrams.length > 100 ||
+      diagrams.some(
+        (rect) =>
+          !Number.isFinite(rect.x) ||
+          !Number.isFinite(rect.y) ||
+          !Number.isFinite(rect.width) ||
+          !Number.isFinite(rect.height) ||
+          rect.x < 0 ||
+          rect.y < 0 ||
+          rect.width <= 0 ||
+          rect.height <= 0 ||
+          rect.x + rect.width > 1 ||
+          rect.y + rect.height > 1,
+      )
+    ) {
+      throw "Diagram rectangles must be normalized positions on the page.";
+    }
+    page.diagrams = diagrams;
+    write(rows);
+    return tick(page);
+  },
+  materialTranscriptConfirm: (materialId) => {
+    const rows = read();
+    const material = rows.materials.find((item) => item.id === materialId);
+    if (!material) throw `material ${materialId} was not found`;
+    const pages = rows.pages.filter((page) => page.materialId === materialId);
+    if (pages.length === 0 || pages.some((page) => page.status !== "done" || page.transcript === null)) {
+      throw "Wait until every page has a transcript before confirming.";
+    }
+    if (!pages.some((page) => page.transcript?.trim())) {
+      throw "Add readable text to at least one page before confirming.";
+    }
+    material.status = "done";
+    material.noteCount = 1;
+    material.error = null;
+    rows.notes.push({
+      id: rows.nextId++,
+      materialId,
+      topicId: material.topicId,
+      isPreview: false,
+      createdAt: new Date().toISOString(),
+      content: {
+        title: "Mitochondria",
+        keyIdeas: ["Mitochondria release energy from glucose."],
+        definitions: [],
+        formulas: [],
+        workedExamples: [],
+        commonMistakes: [],
+        checkThis: ["Check the uncertain words against the page."],
+        aiAdditions: ["A short explanation of energy release."],
+      },
+    });
+    write(rows);
+    return tick(1);
+  },
+  materialNotesGet: (materialId) =>
+    tick(read().notes.filter((note) => note.materialId === materialId)),
 
   topicSuggest: () =>
     tick<TopicMatch>({
@@ -567,12 +729,25 @@ export const mockBackend: Backend = {
     const due = mine.filter((c) => !c.isNewCard && c.due <= now);
     const fresh = mine.filter((c) => c.isNewCard).slice(0, newLimit ?? 10);
     const chosen = [...due, ...fresh];
+    const id = rows.nextId++;
+    rows.sessions.push({
+      id,
+      subjectId,
+      plannedMinutes: minutes,
+      cardIds: chosen.map((card) => card.id),
+      doneCardIds: [],
+      cardsDone: 0,
+      startedAt: Date.now(),
+      endedAt: null,
+    });
+    write(rows);
     return tick<StudySession>({
-      id: 1,
+      id,
       subjectId,
       plannedMinutes: minutes,
       dueCount: due.length,
       newCount: fresh.length,
+      cardsDone: 0,
       cards: chosen.map((c) => ({
         card: c,
         isNew: c.isNewCard,
@@ -581,14 +756,51 @@ export const mockBackend: Backend = {
       })),
     });
   },
+  sessionResume: (sessionId) => {
+    const rows = seedCards(read(), null);
+    const session = rows.sessions.find((item) => item.id === sessionId);
+    if (!session || session.endedAt !== null) return tick(null);
+    if (Date.now() - session.startedAt > 12 * 60 * 60 * 1000) {
+      session.endedAt = Date.now();
+      write(rows);
+      return tick(null);
+    }
+    const remaining = session.cardIds
+      .filter((id) => !session.doneCardIds.includes(id))
+      .map((id) => rows.cards.find((card) => card.id === id))
+      .filter((card): card is Rows["cards"][number] => card !== undefined);
+    const now = Date.now();
+    const due = remaining.filter((card) => !card.isNewCard && card.due <= now);
+    const fresh = remaining.filter((card) => card.isNewCard);
+    return tick<StudySession>({
+      id: session.id,
+      subjectId: session.subjectId,
+      plannedMinutes: session.plannedMinutes,
+      dueCount: due.length,
+      newCount: fresh.length,
+      cardsDone: session.cardsDone,
+      cards: remaining.map((c) => ({
+        card: c,
+        isNew: c.isNewCard,
+        topicTitle: rows.topics.find((t) => t.id === c.topicId)?.title ?? null,
+        subjectId:
+          session.subjectId ?? rows.topics.find((t) => t.id === c.topicId)?.subjectId ?? null,
+      })),
+    });
+  },
   sessionGrade: (_sessionId, cardId, rating) => {
     const rows = read();
+    const session = rows.sessions.find((item) => item.id === _sessionId);
     const card = rows.cards.find((c) => c.id === cardId);
     // Roughly mirrors FSRS: a failure returns soon, success pushes out.
     const days = rating === 1 ? 0 : rating === 2 ? 1 : rating === 3 ? 3 : 7;
     if (card) {
       card.isNewCard = false;
       card.due = Date.now() + days * 86_400_000;
+      if (session && !session.doneCardIds.includes(cardId)) {
+        session.doneCardIds.push(cardId);
+        session.cardsDone += 1;
+      }
       write(rows);
     }
     return tick<GradeResult>({
@@ -598,14 +810,19 @@ export const mockBackend: Backend = {
       state: rating === 1 ? "learning" : "review",
     });
   },
-  sessionEnd: (sessionId) =>
-    tick<SessionSummary>({
+  sessionEnd: (sessionId) => {
+    const rows = read();
+    const session = rows.sessions.find((item) => item.id === sessionId);
+    if (session) session.endedAt = Date.now();
+    write(rows);
+    return tick<SessionSummary>({
       sessionId,
-      cardsDone: 0,
+      cardsDone: session?.cardsDone ?? 0,
       topicsTouched: [],
       dueTomorrow: 0,
-      minutes: 10,
-    }),
+      minutes: session?.plannedMinutes ?? 10,
+    });
+  },
   mastery: (subjectId) => {
     const rows = read();
     return tick<TopicMastery[]>(
@@ -631,9 +848,11 @@ export const mockBackend: Backend = {
       counts: { queued: 0, running: 0, done: 0, failed: 0, paused: 0 },
       quota: [],
       resumesAt: null,
+      pausedReason: null,
     }),
   queueRetry: () =>
     tick<QueueCounts>({ queued: 0, running: 0, done: 0, failed: 0, paused: 0 }),
+  queueWake: () => tick(undefined),
 
   providersList: () =>
     tick<ProviderInfo[]>([
@@ -661,11 +880,30 @@ export const mockBackend: Backend = {
         defaultModel: "google/gemma-4-26b-a4b-it:free",
         selectedModel: "google/gemma-4-26b-a4b-it:free",
       },
+      {
+        id: "deepseek",
+        label: "DeepSeek",
+        configured: false,
+        helpUrl: "https://platform.deepseek.com/api_keys",
+        defaultModel: "deepseek-flash",
+        selectedModel: "deepseek-flash",
+      },
     ]),
+  aiStatus: () =>
+    tick<ManagedAiStatus>({
+     enabled: false,
+     plan: null,
+     date: null,
+     resetAt: null,
+     used: null,
+     limits: null,
+    }),
   providerKeySet: () =>
     Promise.reject(
       "Keys are stored in secure device storage, which the browser preview has no access to.",
     ),
+  providerKeyTest: () =>
+    Promise.reject("Testing a provider key needs the desktop app, not the browser preview."),
   providerModels: () =>
     Promise.reject("Listing models needs the desktop app — this is the browser preview."),
   providerModelSet: () => tick(undefined),
@@ -702,6 +940,37 @@ export const mockBackend: Backend = {
     window.open(url, "_blank", "noopener,noreferrer");
   },
 };
+
+function photoFingerprint(pages: Uint8Array[]): string {
+  let hash = 0x811c9dc5;
+  for (const page of pages) {
+    hash = Math.imul(hash ^ page.length, 0x01000193);
+    for (const byte of page) hash = Math.imul(hash ^ byte, 0x01000193);
+  }
+  return `mock-${(hash >>> 0).toString(16).padStart(8, "0")}`;
+}
+
+function hasSupportedImageMagic(page: Uint8Array): boolean {
+  const jpeg = page[0] === 0xff && page[1] === 0xd8 && page[2] === 0xff;
+  const png =
+    page.length >= 8 &&
+    page[0] === 0x89 &&
+    page[1] === 0x50 &&
+    page[2] === 0x4e &&
+    page[3] === 0x47 &&
+    page[4] === 0x0d &&
+    page[5] === 0x0a &&
+    page[6] === 0x1a &&
+    page[7] === 0x0a;
+  const webp =
+    page.length >= 12 &&
+    page[0] === 0x52 &&
+    page[1] === 0x49 &&
+    page[2] === 0x46 &&
+    page[3] === 0x46 &&
+    String.fromCharCode(...page.slice(8, 12)) === "WEBP";
+  return jpeg || png || webp;
+}
 
 /** Cards belonging to a subject, through their topic. */
 function cardsFor(rows: Rows, subjectId: number | null) {

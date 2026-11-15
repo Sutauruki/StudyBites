@@ -431,3 +431,75 @@ the file directly instead of uploading a zipped Actions artifact.
 `Screen` provides a full-height, contained scrolling body and a safe-area-aware
 footer. Gates, study, CBT, and dialogs use it so primary actions stay above
 the phone navigation bar and keyboard without changing desktop layout.
+
+### D38. Android study recovery uses database card rows plus a short local snapshot
+
+Each session records its ordered cards and completion state in `session_cards`.
+The database is authoritative for which cards remain, while a versioned,
+12-hour localStorage snapshot preserves the screen, timer, reveal choice and
+typed draft. The countdown pauses while the document is hidden, and open
+sessions older than 12 hours are closed at startup. Other screens with unsaved
+local state remain follow-ups: upload dialogs, scheme editing, settings forms,
+and CBT answers.
+
+### D39. Photo pages are resized locally and reviewed before distillation
+
+The WebView resizes each selected photo to JPEG (1600px long edge, quality
+0.8), which removes EXIF metadata; Rust validates the image signature, encrypts
+each page in cold storage, and queues one transcription job per page. The
+student can edit the transcript and mark diagram rectangles before confirming,
+and only that confirmed wording is distilled. The review image is read back
+from cold storage through a dedicated IPC command. Models without known image
+support pause with a configuration reason rather than repeatedly failing.
+
+### D40. Do Not Disturb is Android-only and restores conservatively
+
+The local Tauri plugin is a no-op on desktop and in the browser. Priority-only
+is the default so alarms and priority contacts remain available. Android saves
+the previous filter and the filter it applies, then restores only if the
+current filter is still the one StudyBites set; a manual change is respected.
+An inexact safety alarm restores the filter at the planned end plus two
+minutes even if the app is killed. The app also restores on session end,
+leaving the session, errors, and startup without a resumable study snapshot.
+
+### D41. Bug reports are opt-in and minimize diagnostics
+
+The app sends a report only after the student submits it. Technical details
+exclude notes, cards, subjects, file names, API keys, and licence codes;
+recent errors are reduced to generic categories. Screenshots are resized
+locally, the encrypted database outbox retries reports while offline, and the
+Worker sends email without persisting report content. The Resend test sender
+is temporary; public launch needs a verified sender or Cloudflare Email
+Service.
+
+### D42. DeepSeek is a BYO-key fallback, with Flash for vision
+
+The [Chat Completions docs](https://api-docs.deepseek.com/api/create-chat-completion)
+confirm `https://api.deepseek.com/chat/completions`, Bearer authentication,
+JSON output, and `thinking: {"type":"disabled"}`. The [vision guide](https://api-docs.deepseek.com/guides/vision)
+confirms OpenAI-compatible base64 image blocks and that Flash supports vision,
+while Pro does not. The retired Flash aliases remain accepted, though the
+pricing page says they are retired and served by the current Flash model.
+
+The [error table](https://api-docs.deepseek.com/quick_start/error_codes)
+confirms 401 authentication, 402 insufficient balance, 429 rate limits, and
+500/503 transient service errors; it also lists 400 format and 422 parameter
+errors. The [pricing page](https://api-docs.deepseek.com/quick_start/pricing)
+confirms $0.15/M cache-miss input and $0.60/M output off-peak, double at peak;
+cache-hit input is cheaper. Gemini remains first in the existing order and is
+still preferred for photo transcription pending a handwriting-quality
+comparison.
+
+### D43. Managed AI is a final fallback through a license-checking Worker
+
+Windows and Android retain their BYO-key providers and only add managed AI as
+the last fallback. The activation code goes from Rust to the Worker; provider
+keys remain Worker secrets. The Worker verifies the signed code, applies
+per-license UTC daily limits, and routes requests to its configured Gemini or
+DeepSeek key. The Settings page can show plan usage without exposing a
+provider key.
+
+This does not independently bind a request to the activation code's device
+fingerprint. Cloudflare KV increments are not atomic, and usage is recorded
+before the upstream call; the counters are best-effort limits, not billing
+records. A later web version with accounts and subscriptions remains separate.

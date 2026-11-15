@@ -5,7 +5,7 @@
 //! upload. The schema is stated once, tersely, and the model is told to return
 //! JSON only — `ai::extract_json` copes with the cases where it does not.
 
-use crate::ai::DistilledNote;
+use crate::ai::{DistillSource, DistilledNote};
 
 /// Keep retrieved notes from crowding out the question in a small context.
 const MAX_NOTE_CHARS: usize = 1_200;
@@ -14,8 +14,26 @@ pub const DISTILL_SYSTEM: &str = "You compress lecture material into study notes
 Be faithful to the source: never add facts it does not contain. \
 Reply with JSON only, no prose, no code fences.";
 
+pub const DISTILL_SYSTEM_STUDENT_NOTES: &str =
+    "You organize a student's own class notes into compact study notes. \
+Keep the student's terms, phrasing and structure. Put doubtful or incomplete points in checkThis. \
+Put anything you add in aiAdditions; do not blend additions into the student's notes. \
+Reply with JSON only, no prose, no code fences.";
+
+pub const TRANSCRIBE_SYSTEM: &str = "Transcribe exactly what is written in this student's notes. \
+Keep the student's wording, abbreviations and order. Write illegible words as [?]. \
+Describe diagrams and tables briefly in [square brackets]. Never correct facts or add content. \
+Reply with JSON only, no prose, no code fences.";
+
+pub fn distill_system(source: DistillSource) -> &'static str {
+    match source {
+        DistillSource::Document => DISTILL_SYSTEM,
+        DistillSource::StudentNotes => DISTILL_SYSTEM_STUDENT_NOTES,
+    }
+}
 /// Ask for one compact note from one chunk.
 pub fn distill_user(
+    source: DistillSource,
     subject: &str,
     topic: Option<&str>,
     heading: Option<&str>,
@@ -31,12 +49,21 @@ pub fn distill_user(
     prompt.push_str(
         "\nSummarise the material below as JSON of this exact shape:\n\
          {\"title\":string,\"keyIdeas\":[string],\"definitions\":[{\"term\":string,\"meaning\":string}],\
-         \"formulas\":[string],\"workedExamples\":[string],\"commonMistakes\":[string]}\n\
+         \"formulas\":[string],\"workedExamples\":[string],\"commonMistakes\":[string],\
+         \"checkThis\":[string],\"aiAdditions\":[string]}\n\
          Keep every entry to one or two sentences. Use [] for anything the \
          material does not cover. Do not invent examples.\n\n---\n",
     );
+    if source == DistillSource::Document {
+        prompt.push_str("For this document, keep checkThis and aiAdditions empty.\n\n");
+    }
     prompt.push_str(text);
     prompt
+}
+
+pub fn transcribe_user() -> &'static str {
+    "Return JSON with this exact shape: {\"text\":string,\"uncertain\":[string],\"blank\":boolean}. \
+     Keep the transcript concise and list words written as [?] in uncertain."
 }
 
 pub const CARDS_SYSTEM: &str = "You write spaced-repetition cards from study notes. \

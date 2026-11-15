@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-dnd-status"
+description = "Enables the dnd_status command without any pre-configured scope."
+commands.allow = ["dnd_status"]
+
+[[permission]]
+identifier = "deny-dnd-status"
+description = "Denies the dnd_status command without any pre-configured scope."
+commands.deny = ["dnd_status"]

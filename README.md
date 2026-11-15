@@ -153,16 +153,21 @@ wrapper that locks the database and forwards calls.
 ### First run
 
 1. **Create a subject** for one of your courses.
-2. **Add an AI key** in Settings. StudyBites uses your own free key — Gemini is
-   tried first, with Groq and OpenRouter as fallbacks when a daily limit is
-   reached. Settings links straight to where each one is issued. Keys go into
-   Windows' credential store, never into the app's database.
+2. **Add an AI key** in Settings. StudyBites uses your own key — Google Gemini
+   is tried first, followed by Groq, OpenRouter and DeepSeek when a provider
+   reaches a daily limit. Settings links to each provider and can test a pasted
+   key before saving it. Keys stay in platform-secure storage and are never
+   returned to the UI. DeepSeek is low cost, but Gemini remains the preferred
+   photo transcription provider until handwriting quality is compared.
 3. Optionally **sketch the scheme of work** for the subject: topics, subtopics
    and week numbers. You can skip this and add topics as you go.
 
 ### Every day
 
-1. **Add material** — a lecture PDF, a DOCX, or a text file.
+1. **Add material** — a lecture PDF, a DOCX, a text file, or photos of your
+   class notes. Photos are resized on the device, transcribed in the
+   background, and kept in **Needs review** until you check and confirm the
+   wording. You can edit uncertain words and mark diagrams before continuing.
 2. **Confirm the topic.** If there is a scheme of work, the AI pre-selects the
    topic it thinks the material belongs to; confirm it, pick another, or choose
    "Something else" and describe it. Nothing is filed silently.
@@ -174,8 +179,18 @@ wrapper that locks the database and forwards calls.
 5. When the time is up the session ends with a short summary. Tomorrow, what
    you studied comes back when it is due.
 
+StudyBites saves the current screen and in-progress study bite locally. If
+Android backgrounds or kills the app, reopening within 12 hours returns you
+to the same bite, card, timer, reveal state and written draft. The countdown
+does not spend time while the app is hidden. Sessions left open for more than
+12 hours are closed automatically.
+
 During a session: **Space** reveals, **1–4** grade (Again / Hard / Good / Easy),
 **Esc** ends.
+
+On supported Android devices, Settings can enable Do Not Disturb during study.
+Priority only is the default, so alarms and priority contacts can still ring;
+StudyBites restores your previous mode when the session ends.
 
 ### Other things it does
 
@@ -185,12 +200,34 @@ During a session: **Space** reveals, **1–4** grade (Again / Hard / Good / Easy
 - **Download original** gives back any file you uploaded, byte for byte.
 - **Check for updates** in Settings tells you when a newer build exists. It
   never downloads or installs anything by itself.
+- **Report a problem** in Settings sends a report only when you choose to
+  submit it. Technical details are optional, screenshots are resized on-device,
+  and reports wait in the encrypted local queue while offline. The diagnostic
+  summary excludes notes, cards, subjects, file names, API keys and licence
+  codes. See [`workers/bug-report/README.md`](workers/bug-report/README.md) for
+  the email service setup.
 
 ### If the daily AI limit is reached
 
 Processing pauses and resumes by itself after the limit resets — nothing is
 lost, and nothing has to be re-uploaded. Studying keeps working completely
 offline in the meantime.
+
+### Managed AI
+
+When a build is configured with the StudyBites AI Worker, it is tried after
+your own providers. The app sends its saved activation code to the Worker so
+it can verify the signed license and enforce the daily plan limits. The Worker
+then forwards the prompt or photo to its configured AI provider. The Worker
+cannot attest the device fingerprint, so this is not an additional device
+lock. Builds without the Worker URL continue to use only your own provider
+keys.
+
+The Worker uses Cloudflare KV for usage counters. They are not atomic under
+concurrent requests, and a request is counted before its upstream call, so
+these limits are best-effort usage controls, not billing records. See
+[`workers/ai-proxy/README.md`](workers/ai-proxy/README.md) for deployment,
+plan administration and setup.
 
 ### On the database key
 
@@ -279,4 +316,6 @@ cracking it is more work than the app costs.
 
 No telemetry, no analytics, no crash reporting. Nothing leaves the device in
 Phase 1. From Phase 2, material is sent only to the AI provider you configure
-with your own API key.
+with your own API key, or through StudyBites AI when enabled in the build. The
+managed Worker verifies the activation code and forwards requests to its
+configured provider; see the Managed AI section above.

@@ -41,6 +41,40 @@ export interface AppInfo {
   phase: number;
 }
 
+export type DndMode = "off" | "priority" | "alarms";
+
+export interface DndStatus {
+  supported: boolean;
+  granted: boolean;
+  mode: DndMode;
+}
+
+export type BugReportCategory = "bug" | "confusing" | "idea";
+
+export interface BugReportAttachment {
+  filename: string;
+  mime: "image/jpeg" | "image/png" | "image/webp";
+  data: string;
+}
+
+export interface BugReport {
+  id: string;
+  deviceId: string;
+  title: string;
+  details: string;
+  steps?: string;
+  contact?: string;
+  category: BugReportCategory;
+  diag: Record<string, string>;
+  attachments: BugReportAttachment[];
+}
+
+export type BugReportResult =
+  | { status: "sent" }
+  | { status: "queued" }
+  | { status: "rateLimited" }
+  | { status: "rejected"; message: string };
+
 /** Everything the UI is allowed to ask the backend for. */
 /** Phase 3: what the onboarding screens and Settings need to know. */
 export interface LicenseStatus {
@@ -159,6 +193,13 @@ export interface Backend extends Phase2Backend {
 
   settingGet(key: string): Promise<string | null>;
   settingSet(key: string, value: string): Promise<void>;
+  dndStatus(): Promise<DndStatus>;
+  dndRequestAccess(): Promise<void>;
+  dndEnable(mode: Exclude<DndMode, "off">, restoreAfterMinutes: number): Promise<DndStatus>;
+  dndRestore(): Promise<DndStatus>;
+  bugReportAvailable(): Promise<boolean>;
+  bugReportSend(report: BugReport): Promise<BugReportResult>;
+  bugReportFlush(): Promise<number>;
 }
 
 // ---- Phase 2 ------------------------------------------------------------
@@ -173,10 +214,50 @@ export interface Material {
   sha256: string;
   coldPath: string | null;
   uploadedAt: string;
-  status: "queued" | "processing" | "done" | "failed" | "paused";
+  status: "queued" | "processing" | "done" | "review" | "failed" | "paused";
   error: string | null;
   noteCount: number;
   cardCount: number;
+}
+
+export interface DiagramRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface MaterialPage {
+  id: number;
+  materialId: number;
+  pageIndex: number;
+  sha256: string;
+  coldPath: string | null;
+  transcript: string | null;
+  uncertain: string[];
+  diagrams: DiagramRect[];
+  status: string;
+  error: string | null;
+}
+
+export interface DistilledNote {
+  title: string;
+  keyIdeas: string[];
+  definitions: Array<{ term: string; meaning: string }>;
+  formulas: string[];
+  workedExamples: string[];
+  commonMistakes: string[];
+  checkThis: string[];
+  aiAdditions: string[];
+}
+
+export interface Note {
+  id: number;
+  materialId: number | null;
+  topicId: number | null;
+  content: DistilledNote;
+  isPreview: boolean;
+  createdAt: string;
 }
 
 export interface Accepted {
@@ -215,6 +296,7 @@ export interface StudySession {
   cards: SessionCard[];
   dueCount: number;
   newCount: number;
+  cardsDone: number;
 }
 
 export interface GradeResult {
@@ -278,6 +360,7 @@ export interface QueueStatus {
   counts: QueueCounts;
   quota: QuotaUsage[];
   resumesAt: string | null;
+  pausedReason: string | null;
 }
 
 export interface ProviderInfo {
@@ -287,6 +370,22 @@ export interface ProviderInfo {
   helpUrl: string;
   defaultModel: string;
   selectedModel: string;
+}
+
+export interface ManagedAiUsage {
+  photoPages: number;
+  tutorMessages: number;
+  smartModelMessages: number;
+  markedAnswers: number;
+}
+
+export interface ManagedAiStatus {
+  enabled: boolean;
+  plan: string | null;
+  date: string | null;
+  resetAt: string | null;
+  used: ManagedAiUsage | null;
+  limits: ManagedAiUsage | null;
 }
 
 export interface ExplainResult {
@@ -319,11 +418,22 @@ export interface ExamStatus {
 /** Phase 2 additions to the backend surface. */
 export interface Phase2Backend {
   materialUpload(subjectId: number, topicId: number | null, path: string): Promise<Accepted>;
+  materialUploadPhotos(
+    subjectId: number,
+    topicId: number | null,
+    pages: Uint8Array[],
+  ): Promise<Accepted>;
   filePreviewText(path: string): Promise<string>;
   materialsList(subjectId: number): Promise<Material[]>;
   materialSetTopic(id: number, topicId: number | null): Promise<Material>;
   materialDelete(id: number): Promise<void>;
   materialSaveOriginal(id: number, destination: string): Promise<string>;
+  materialPagesGet(materialId: number): Promise<MaterialPage[]>;
+  materialPageImageGet(pageId: number): Promise<string>;
+  materialPageTextSet(pageId: number, text: string): Promise<MaterialPage>;
+  materialDiagramsSet(pageId: number, rects: DiagramRect[]): Promise<MaterialPage>;
+  materialTranscriptConfirm(materialId: number): Promise<number>;
+  materialNotesGet(materialId: number): Promise<Note[]>;
 
   topicSuggest(subjectId: number, text: string): Promise<TopicMatch>;
   schemeParse(text: string): Promise<SchemeEntry[]>;
@@ -332,6 +442,7 @@ export interface Phase2Backend {
 
   dueCounts(subjectId: number | null): Promise<DueCounts>;
   sessionStart(subjectId: number | null, minutes: number, newLimit?: number): Promise<StudySession>;
+  sessionResume(sessionId: number): Promise<StudySession | null>;
   sessionGrade(
     sessionId: number | null,
     cardId: number,
@@ -343,9 +454,12 @@ export interface Phase2Backend {
 
   queueStatus(): Promise<QueueStatus>;
   queueRetry(): Promise<QueueCounts>;
+  queueWake(): Promise<void>;
 
   providersList(): Promise<ProviderInfo[]>;
+  aiStatus(): Promise<ManagedAiStatus>;
   providerKeySet(provider: string, key: string): Promise<void>;
+  providerKeyTest(provider: string, key: string): Promise<string[]>;
   providerModels(provider: string): Promise<string[]>;
   providerModelSet(provider: string, model: string): Promise<void>;
   githubTokenSet(token: string): Promise<void>;

@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-dnd-enable"
+description = "Enables the dnd_enable command without any pre-configured scope."
+commands.allow = ["dnd_enable"]
+
+[[permission]]
+identifier = "deny-dnd-enable"
+description = "Denies the dnd_enable command without any pre-configured scope."
+commands.deny = ["dnd_enable"]

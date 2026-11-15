@@ -1,6 +1,7 @@
 import { mockBackend } from "./mock";
 import { tauriBackend } from "./tauri";
 import type { Backend } from "./types";
+import { recordDiagnosticError } from "../lib/diag";
 
 /**
  * Inside the Tauri window this is true and the real Rust backend is used; in a
@@ -16,9 +17,14 @@ export const backend: Backend = isDesktop ? tauriBackend : mockBackend;
  * too. Anything else gets a readable fallback rather than "[object Object]".
  */
 export function errorText(err: unknown): string {
-  if (typeof err === "string") return err;
-  if (err instanceof Error) return err.message;
-  return "Something went wrong.";
+  const message =
+    typeof err === "string"
+      ? err
+      : err instanceof Error
+        ? err.message
+        : "Something went wrong.";
+  recordDiagnosticError(message);
+  return message;
 }
 
 export * from "./types";

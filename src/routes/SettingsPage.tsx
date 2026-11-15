@@ -3,13 +3,17 @@ import {
   backend,
   errorText,
   isDesktop,
+  type DndMode,
+  type DndStatus,
   type LicenseStatus,
+  type ManagedAiStatus,
   type ProviderInfo,
   type QueueStatus,
   type UpdateStatus,
 } from "../api";
 import type { Theme } from "../App";
 import { Banner, Loading } from "../components/ui";
+import { ReportBugDialog } from "../components/ReportBugDialog";
 import { Prose } from "./OnboardingPage";
 
 const THEMES: Array<{ value: Theme; label: string }> = [
@@ -23,15 +27,21 @@ export function SettingsPage({
   onThemeChange,
   version,
   license,
+  diagnosticView,
 }: {
   theme: Theme;
   onThemeChange: (theme: Theme) => void;
   version: string;
   license: LicenseStatus;
+  diagnosticView: string;
 }) {
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [queue, setQueue] = useState<QueueStatus | null>(null);
+  const [managedAi, setManagedAi] = useState<ManagedAiStatus | null>(null);
+  const [managedAiError, setManagedAiError] = useState<string | null>(null);
+  const [managedAiBusy, setManagedAiBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [reportOpen, setReportOpen] = useState(false);
 
   const refresh = useCallback(async (): Promise<ProviderInfo[]> => {
     try {
@@ -45,9 +55,22 @@ export function SettingsPage({
     }
   }, []);
 
+  const refreshManagedAi = useCallback(async () => {
+    setManagedAiBusy(true);
+    try {
+      setManagedAi(await backend.aiStatus());
+      setManagedAiError(null);
+    } catch (err) {
+      setManagedAiError(errorText(err));
+    } finally {
+      setManagedAiBusy(false);
+    }
+  }, []);
+
   useEffect(() => {
     void refresh().catch(() => {});
-  }, [refresh]);
+    void refreshManagedAi();
+  }, [refresh, refreshManagedAi]);
 
   return (
     <>
@@ -78,11 +101,15 @@ export function SettingsPage({
         </div>
       </section>
 
+      <DndSection onError={setError} />
+
       <section className="stack">
         <span className="label">AI keys</span>
         <p className="muted">
-          StudyBites uses your own API key, stored securely on this device and sent only to the
-          provider you choose. Gemini is tried first, then the others if it runs out for the day.
+          Your own keys are stored securely on this device and sent only to their provider. If
+          StudyBites AI is available, it can also be used as a fallback; its Worker checks your
+          activation code and forwards the request to its configured AI provider. Gemini is tried
+          first, then the others if they run out.
         </p>
         <div className="card list">
           {providers.map((provider) => (
@@ -90,6 +117,13 @@ export function SettingsPage({
           ))}
         </div>
       </section>
+
+      <ManagedAiSection
+        status={managedAi}
+        error={managedAiError}
+        busy={managedAiBusy}
+        onRefresh={() => void refreshManagedAi()}
+      />
 
       {queue && queue.quota.length > 0 && (
         <section className="stack">
@@ -120,17 +154,241 @@ export function SettingsPage({
 
       <section className="card card--pad">
         <div className="stack">
+          <span className="label">Help and feedback</span>
+          <p className="muted">
+            Send a problem report with optional screenshots. Nothing is sent until you choose to
+            submit it.
+          </p>
+          <div>
+            <button className="btn" onClick={() => setReportOpen(true)}>
+              Report a problem
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section className="card card--pad">
+        <div className="stack">
           <span className="label">Privacy</span>
           <p className="muted">
-            Your notes stay on this device. There is no telemetry, no analytics and no crash
-            reporting. Material is sent only to the AI provider you configure, using your key.
+            Your notes stay on this device. There is no telemetry, analytics or automatic crash
+            reporting. Material is sent only when you request AI: to the provider you configure
+            with your key, or through StudyBites AI when available. The managed Worker receives
+            your activation code to apply plan limits and forwards the request to its configured
+            provider. Bug reports are sent only when you choose to submit one.
           </p>
           <p className="muted">
             Storage: {isDesktop ? "secure storage on this device" : "browser mock data"}
           </p>
         </div>
       </section>
+      {reportOpen && (
+        <ReportBugDialog
+          version={version}
+          view={diagnosticView}
+          licenseState={license.unlocked ? "unlocked" : "locked"}
+          onClose={() => setReportOpen(false)}
+        />
+      )}
     </>
+  );
+}
+
+function ManagedAiSection({
+  status,
+  error,
+  busy,
+  onRefresh,
+}: {
+  status: ManagedAiStatus | null;
+  error: string | null;
+  busy: boolean;
+  onRefresh: () => void;
+}) {
+  return (
+    <section className="card card--pad">
+      <div className="stack">
+        <div className="row">
+          <span className="label">StudyBites AI</span>
+          <button className="btn" disabled={busy} onClick={onRefresh}>
+            {busy ? "Checking…" : "Refresh usage"}
+          </button>
+        </div>
+        {error ? (
+          <Banner kind="error">{error}</Banner>
+        ) : status?.enabled && status.used && status.limits ? (
+          <>
+            <p className="muted">
+              Plan: {status.plan ?? "unknown"} · usage resets{" "}
+              {status.resetAt ? new Date(status.resetAt).toLocaleString() : "at midnight UTC"}.
+            </p>
+            <div className="list">
+              <UsageRow
+                label="Photo pages"
+                used={status.used.photoPages}
+                limit={status.limits.photoPages}
+              />
+              <UsageRow
+                label="Tutor messages"
+                used={status.used.tutorMessages}
+                limit={status.limits.tutorMessages}
+              />
+              <UsageRow
+                label="Smart-model messages"
+                used={status.used.smartModelMessages}
+                limit={status.limits.smartModelMessages}
+              />
+              <UsageRow
+                label="Marked answers"
+                used={status.used.markedAnswers}
+                limit={status.limits.markedAnswers}
+              />
+            </div>
+          </>
+        ) : (
+          <p className="muted">
+            Managed AI is unavailable for this app right now. You can still add your own provider
+            key above.
+          </p>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function UsageRow({ label, used, limit }: { label: string; used: number; limit: number }) {
+  return (
+    <div className="list__item list__item--static">
+      <div className="list__text">
+        <div className="list__title">{label}</div>
+        <div className="list__meta">
+          {used} of {limit} today
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DndSection({ onError }: { onError: (message: string) => void }) {
+  const [status, setStatus] = useState<DndStatus | null>(null);
+  const [enabled, setEnabled] = useState(false);
+  const [mode, setMode] = useState<Exclude<DndMode, "off">>("priority");
+  const [waitingForAccess, setWaitingForAccess] = useState(false);
+  const [hint, setHint] = useState<string | null>(null);
+
+  const saveEnabled = async (value: boolean) => {
+    await backend.settingSet("dnd.enabled", String(value));
+    setEnabled(value);
+  };
+
+  useEffect(() => {
+    let active = true;
+    void Promise.all([
+      backend.dndStatus(),
+      backend.settingGet("dnd.enabled"),
+      backend.settingGet("dnd.mode"),
+    ])
+      .then(([nextStatus, savedEnabled, savedMode]) => {
+        if (!active) return;
+        setStatus(nextStatus);
+        setEnabled(savedEnabled === "true");
+        if (savedMode === "alarms" || savedMode === "priority") setMode(savedMode);
+      })
+      .catch((err) => onError(errorText(err)));
+    return () => {
+      active = false;
+    };
+  }, [onError]);
+
+  useEffect(() => {
+    if (!waitingForAccess) return;
+    const onVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      void (async () => {
+        try {
+          const nextStatus = await backend.dndStatus();
+          setStatus(nextStatus);
+          if (nextStatus.granted) {
+            await saveEnabled(true);
+            setHint(null);
+          } else {
+            await saveEnabled(false);
+            setHint("Allow StudyBites in Do Not Disturb access.");
+          }
+        } catch (err) {
+          onError(errorText(err));
+        } finally {
+          setWaitingForAccess(false);
+        }
+      })();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [onError, waitingForAccess]);
+
+  if (!status?.supported) return null;
+
+  return (
+    <section className="card card--pad">
+      <div className="stack">
+        <label className="row">
+          <input
+            type="checkbox"
+            checked={enabled}
+            onChange={async (event) => {
+              const next = event.target.checked;
+              setHint(null);
+              try {
+                if (!next) {
+                  await saveEnabled(false);
+                  return;
+                }
+                const current = await backend.dndStatus();
+                setStatus(current);
+                if (current.granted) {
+                  await saveEnabled(true);
+                } else {
+                  setHint("Allow Do Not Disturb access for StudyBites to use this during study.");
+                  setWaitingForAccess(true);
+                  await backend.dndRequestAccess();
+                }
+              } catch (err) {
+                setEnabled(false);
+                setWaitingForAccess(false);
+                onError(errorText(err));
+              }
+            }}
+            disabled={waitingForAccess}
+          />
+          <span className="field__label">Do Not Disturb during study sessions</span>
+        </label>
+        <p className="muted">
+          StudyBites restores your previous mode when a session ends. Priority only is recommended.
+        </p>
+        <label className="field">
+          <span className="field__label">Do Not Disturb mode</span>
+          <select
+            className="input"
+            value={mode}
+            disabled={!enabled}
+            onChange={async (event) => {
+              const next: Exclude<DndMode, "off"> =
+                event.target.value === "alarms" ? "alarms" : "priority";
+              setMode(next);
+              try {
+                await backend.settingSet("dnd.mode", next);
+              } catch (err) {
+                onError(errorText(err));
+              }
+            }}
+          >
+            <option value="priority">Priority only (recommended)</option>
+            <option value="alarms">Alarms only</option>
+          </select>
+        </label>
+        {hint && <Banner kind="info">{hint}</Banner>}
+      </div>
+    </section>
   );
 }
 
@@ -149,6 +407,8 @@ function KeyRow({
   const [models, setModels] = useState<string[] | null>(null);
   const [loadingModels, setLoadingModels] = useState(false);
   const [selectedModel, setSelectedModel] = useState(provider.selectedModel);
+  const [testingKey, setTestingKey] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
 
   useEffect(() => {
     setSelectedModel(provider.selectedModel);
@@ -191,9 +451,12 @@ function KeyRow({
         )}
         <span aria-hidden="true">·</span>
         <button className="link" onClick={() => void backend.openUrl(provider.helpUrl)}>
-          Get a free key
+          Get a key
         </button>
       </div>
+      {provider.id === "deepseek" && (
+        <p className="muted">Low cost. Your notes are sent to DeepSeek.</p>
+      )}
 
       {/* Models are listed by the provider itself, so a retired one can
           always be swapped without waiting for a new build. */}
@@ -259,17 +522,43 @@ function KeyRow({
           value={value}
           placeholder={provider.configured ? "Replace key…" : "Paste key…"}
           autoComplete="off"
-          onChange={(e) => setValue(e.target.value)}
+          disabled={testingKey}
+          onChange={(e) => {
+            setValue(e.target.value);
+            setTestResult(null);
+          }}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !busy) void save();
           }}
         />
-        <button className="btn" onClick={save} disabled={busy || !value.trim()}>
+        <button
+          className="btn"
+          onClick={async () => {
+            setTestingKey(true);
+            setTestResult(null);
+            try {
+              const models = await backend.providerKeyTest(provider.id, value);
+              setTestResult({
+                ok: true,
+                message: `Key works. ${models.length} models are available.`,
+              });
+            } catch (err) {
+              setTestResult({ ok: false, message: errorText(err) });
+            } finally {
+              setTestingKey(false);
+            }
+          }}
+          disabled={testingKey || busy || !value.trim()}
+        >
+          {testingKey ? "Testing…" : "Test key"}
+        </button>
+        <button className="btn" onClick={save} disabled={busy || testingKey || !value.trim()}>
           {saved ? "Saved" : "Save"}
         </button>
         {provider.configured && (
           <button
             className="btn btn--danger"
+            disabled={testingKey}
             onClick={async () => {
               try {
                 await backend.providerKeySet(provider.id, "");
@@ -283,6 +572,7 @@ function KeyRow({
           </button>
         )}
       </div>
+      {testResult && <Banner kind={testResult.ok ? "info" : "error"}>{testResult.message}</Banner>}
     </div>
   );
 }

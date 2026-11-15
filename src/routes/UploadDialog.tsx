@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { backend, errorText, type Topic, type TopicMatch } from "../api";
 import { Banner, Modal } from "../components/ui";
+import { resizeImage } from "../lib/image";
 
 /** Flatten the outline so a topic can be picked from one list. */
 function flatten(topics: Topic[]): Array<{ id: number; label: string }> {
@@ -31,7 +32,10 @@ export function UploadDialog({
   onClose: () => void;
   onUploaded: (message: string) => void;
 }) {
+  const [mode, setMode] = useState<"choose" | "document" | "photos">("choose");
   const [path, setPath] = useState<string | null>(null);
+  const [photos, setPhotos] = useState<File[]>([]);
+  const [photoUrls, setPhotoUrls] = useState<string[]>([]);
   const [suggestion, setSuggestion] = useState<TopicMatch | null>(null);
   const [topicId, setTopicId] = useState<number | null>(null);
   const [somethingElse, setSomethingElse] = useState("");
@@ -39,48 +43,81 @@ export function UploadDialog({
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const photoInput = useRef<HTMLInputElement>(null);
 
   const options = flatten(topics);
 
-  // Pick the file as soon as the dialog opens — that is why it was opened.
   useEffect(() => {
-    let alive = true;
-    (async () => {
-      try {
-        const picked = await backend.pickFile();
-        if (!alive) return;
-        if (!picked) {
-          onClose();
-          return;
-        }
-        setPath(picked);
+    const urls = photos.map((file) => URL.createObjectURL(file));
+    setPhotoUrls(urls);
+    return () => urls.forEach((url) => URL.revokeObjectURL(url));
+  }, [photos]);
 
-        if (options.length === 0) return;
-        setStatus("Reading the file and matching it to your outline…");
+  const pickDocument = async () => {
+    setMode("document");
+    setStatus(null);
+    setError(null);
+    try {
+      const picked = await backend.pickFile();
+      if (!picked) {
+        setMode("choose");
+        return;
+      }
+      setPath(picked);
+      if (options.length === 0) return;
+      setStatus("Reading the file and matching it to your outline…");
+      try {
         const text = await backend.filePreviewText(picked);
         const matched = await backend.topicSuggest(subjectId, text);
-        if (!alive) return;
         setSuggestion(matched);
-        setStatus(null);
         if (matched.index !== null && options[matched.index]) {
           setTopicId(options[matched.index].id);
         }
       } catch (err) {
-        // A failed suggestion is not fatal: the student picks the topic.
-        if (alive) {
-          setStatus(`Could not suggest a topic — pick one below. (${errorText(err)})`);
-        }
+        setStatus(`Could not suggest a topic — pick one below. (${errorText(err)})`);
+      } finally {
+        setStatus((current) =>
+          current?.startsWith("Reading the file") ? null : current,
+        );
       }
-    })();
-    return () => {
-      alive = false;
-    };
-    // Runs once per dialog; choosing another file means reopening it.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    } catch (err) {
+      setError(errorText(err));
+      setMode("choose");
+    }
+  };
+
+  const onPhotoChange = (files: FileList | null) => {
+    const selected = Array.from(files ?? []);
+    if (selected.length < 1 || selected.length > 20) {
+      setError("Choose between 1 and 20 photos.");
+      return;
+    }
+    if (selected.some((file) => !["image/jpeg", "image/png", "image/webp"].includes(file.type))) {
+      setError("Choose JPEG, PNG or WebP photos.");
+      return;
+    }
+    setError(null);
+    setMode("photos");
+    setPath(null);
+    setPhotos(selected);
+    setTopicId(null);
+    setUseSomethingElse(false);
+    setSuggestion(null);
+  };
+
+  const movePhoto = (index: number, delta: number) => {
+    setPhotos((current) => {
+      const next = [...current];
+      const destination = index + delta;
+      if (destination < 0 || destination >= next.length) return current;
+      [next[index], next[destination]] = [next[destination], next[index]];
+      return next;
+    });
+  };
 
   const submit = async () => {
-    if (!path) return;
+    if (mode === "document" && !path) return;
+    if (mode === "photos" && photos.length === 0) return;
     setBusy(true);
     setError(null);
     try {
@@ -96,17 +133,33 @@ export function UploadDialog({
         chosen = created.id;
       }
 
-      const accepted = await withTimeout(
-        backend.materialUpload(subjectId, chosen, path),
-        120_000,
-        "The upload took too long. Check that the file is under 64 MB and try again.",
-      );
+      const accepted =
+        mode === "photos"
+          ? await withTimeout(
+              Promise.all(photos.map((photo) => resizeImage(photo, 1600, 0.8))).then((pages) => {
+                if (pages.some((page) => page.byteLength > 4 * 1024 * 1024)) {
+                  throw new Error(
+                    "Each photo must be 4 MB or smaller after resizing. Choose fewer or smaller photos.",
+                  );
+                }
+                return backend.materialUploadPhotos(subjectId, chosen, pages);
+              }),
+              120_000,
+              "The photos took too long to add. Try fewer photos.",
+            )
+          : await withTimeout(
+              backend.materialUpload(subjectId, chosen, path!),
+              120_000,
+              "The upload took too long. Check that the file is under 64 MB and try again.",
+            );
       if (accepted.duplicateOf !== null) {
         onUploaded("You have already uploaded that file, so nothing was re-processed.");
       } else {
         onUploaded(
-          `Added “${accepted.material.originalFilename}”. Processing ${accepted.chunkCount} ` +
-            `section${accepted.chunkCount === 1 ? "" : "s"} in the background.`,
+          mode === "photos"
+            ? `Added “${accepted.material.originalFilename}”. The photos are waiting for transcription.`
+            : `Added “${accepted.material.originalFilename}”. Processing ${accepted.chunkCount} ` +
+                `section${accepted.chunkCount === 1 ? "" : "s"} in the background.`,
         );
       }
       onClose();
@@ -147,17 +200,112 @@ export function UploadDialog({
           <button className="btn btn--ghost" onClick={onClose} disabled={busy}>
             Cancel
           </button>
-          <button className="btn btn--primary" onClick={submit} disabled={busy || !path}>
+          <button
+            className="btn btn--primary"
+            onClick={submit}
+            disabled={busy || (mode === "document" ? !path : mode === "photos" ? !photos.length : true)}
+          >
             {busy ? "Adding…" : "Confirm and add"}
           </button>
         </>
       }
     >
-      {path ? <p className="muted">{filename}</p> : <p className="muted">Choosing a file…</p>}
+      {mode === "choose" && (
+        <div className="stack">
+          <p className="muted">Choose a document or photos of your notes.</p>
+          <div className="row row--wrap">
+            <button className="btn" onClick={() => void pickDocument()}>
+              Choose a document
+            </button>
+            <button
+              className="btn"
+              onClick={() => {
+                setMode("photos");
+                photoInput.current?.click();
+              }}
+            >
+              Choose photos
+            </button>
+          </div>
+        </div>
+      )}
+
+      <input
+        ref={photoInput}
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        capture="environment"
+        multiple
+        hidden
+        onChange={(event) => {
+          onPhotoChange(event.currentTarget.files);
+          event.currentTarget.value = "";
+        }}
+      />
+
+      {mode === "document" && (
+        <div className="row row--wrap">
+          <p className="muted">{path ? filename : "Choosing a document…"}</p>
+          <button className="btn btn--ghost" onClick={() => setMode("choose")} disabled={busy}>
+            Choose photos instead
+          </button>
+        </div>
+      )}
+
+      {mode === "photos" && (
+        <div className="stack">
+          <div className="row row--wrap">
+            <span className="muted">{photos.length} photo{photos.length === 1 ? "" : "s"}</span>
+            <button
+              className="btn btn--ghost"
+              onClick={() => photoInput.current?.click()}
+              disabled={busy}
+            >
+              Add photos
+            </button>
+            <button className="btn btn--ghost" onClick={() => setMode("choose")} disabled={busy}>
+              Choose a document instead
+            </button>
+          </div>
+          {photos.map((photo, index) => (
+            <div className="row row--wrap" key={`${photo.name}-${index}`}>
+              <img
+                src={photoUrls[index]}
+                alt={`Photo ${index + 1}`}
+                className="photo-upload__thumbnail"
+              />
+              <span className="muted">{photo.name || `Photo ${index + 1}`}</span>
+              <button
+                className="btn btn--ghost"
+                aria-label={`Move photo ${index + 1} up`}
+                disabled={index === 0 || busy}
+                onClick={() => movePhoto(index, -1)}
+              >
+                Move up
+              </button>
+              <button
+                className="btn btn--ghost"
+                aria-label={`Move photo ${index + 1} down`}
+                disabled={index === photos.length - 1 || busy}
+                onClick={() => movePhoto(index, 1)}
+              >
+                Move down
+              </button>
+              <button
+                className="btn btn--danger"
+                disabled={busy}
+                onClick={() => setPhotos((current) => current.filter((_, i) => i !== index))}
+              >
+                Remove
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
       {status && <Banner kind="info">{status}</Banner>}
 
-      {options.length > 0 && (
+      {mode !== "choose" && options.length > 0 && (
         <>
           {suggestedLabel && (
             <Banner kind="info">
@@ -193,7 +341,7 @@ export function UploadDialog({
         </>
       )}
 
-      {(useSomethingElse || options.length === 0) && (
+      {mode !== "choose" && (useSomethingElse || options.length === 0) && (
         <div className="field">
           <span className="field__label">
             {options.length === 0 ? "Topic (optional)" : "Describe it"}

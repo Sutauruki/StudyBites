@@ -167,6 +167,45 @@ pub const MIGRATIONS: &[&str] = &[
     );
     CREATE INDEX idx_cbt_answers_test ON cbt_answers(test_id, position);
     "#,
+    // ---- 005: resumable study sessions -----------------------------------
+    r#"
+    CREATE TABLE session_cards (
+        session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+        position   INTEGER NOT NULL,
+        card_id    INTEGER NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+        done       INTEGER NOT NULL DEFAULT 0 CHECK (done IN (0,1)),
+        PRIMARY KEY (session_id, position)
+    );
+    CREATE INDEX idx_session_cards_card ON session_cards(session_id, card_id);
+    "#,
+    // ---- 006: pages for photo uploads -----------------------------------
+    r#"
+    CREATE TABLE material_pages (
+        id            INTEGER PRIMARY KEY,
+        material_id   INTEGER NOT NULL REFERENCES materials(id) ON DELETE CASCADE,
+        page_index    INTEGER NOT NULL,
+        sha256        TEXT NOT NULL,
+        cold_path     TEXT,
+        transcript    TEXT,
+        uncertain_json TEXT NOT NULL DEFAULT '[]',
+        diagrams_json TEXT NOT NULL DEFAULT '[]',
+        status        TEXT NOT NULL DEFAULT 'queued',
+        error         TEXT,
+        UNIQUE(material_id, page_index)
+    );
+    CREATE INDEX idx_material_pages_material ON material_pages(material_id, page_index);
+    "#,
+    // ---- 007: offline bug report outbox ---------------------------------
+    r#"
+    CREATE TABLE bug_outbox (
+        id          INTEGER PRIMARY KEY,
+        created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        report_id   TEXT NOT NULL UNIQUE,
+        payload_json TEXT NOT NULL,
+        attempts    INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX idx_bug_outbox_created ON bug_outbox(created_at, id);
+    "#,
 ];
 
 pub const SCHEMA_VERSION: i64 = MIGRATIONS.len() as i64;

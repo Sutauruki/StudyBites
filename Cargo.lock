@@ -3996,6 +3996,7 @@ checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
 name = "studybites"
 version = "0.1.0"
 dependencies = [
+ "base64 0.23.1",
  "keyring",
  "serde",
  "serde_json",
@@ -4003,6 +4004,7 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
+ "tauri-plugin-dnd",
  "tauri-plugin-fs",
  "tauri-plugin-opener",
 ]
@@ -4011,6 +4013,7 @@ dependencies = [
 name = "studybites-core"
 version = "0.1.0"
 dependencies = [
+ "base64 0.23.1",
  "chacha20poly1305",
  "ed25519-dalek",
  "getrandom 0.2.17",
@@ -4316,6 +4319,16 @@ dependencies = [
  "tauri-plugin-fs",
  "thiserror 2.0.21",
  "url",
+]
+
+[[package]]
+name = "tauri-plugin-dnd"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "tauri",
+ "tauri-plugin",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

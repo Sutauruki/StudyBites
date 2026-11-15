@@ -199,6 +199,10 @@ fn ai_errors_route_correctly() {
     assert!(!auth.is_retryable(), "a bad key stays bad");
     assert!(auth.should_fall_through());
 
+    let unsupported = AiError::Unsupported("text-only model".into());
+    assert!(!unsupported.is_retryable());
+    assert!(unsupported.should_fall_through());
+
     // A malformed reply is worth one retry, but another provider would be
     // answering a different question, so it does not fall through.
     let bad = AiError::BadResponse("no json".into());
@@ -212,11 +216,32 @@ fn ai_errors_route_correctly() {
 fn provider_ids_round_trip() {
     for id in ProviderId::default_order() {
         assert_eq!(ProviderId::parse(id.as_str()), Some(id));
+    }
+    for id in ProviderId::byo_order() {
         assert!(id.key_help_url().starts_with("https://"));
     }
     assert_eq!(ProviderId::parse(" GEMINI "), Some(ProviderId::Gemini));
+    assert_eq!(ProviderId::parse("DeepSeek"), Some(ProviderId::Deepseek));
     assert_eq!(ProviderId::parse("chatgpt"), None);
-    assert_eq!(ProviderId::default_order()[0], ProviderId::Gemini);
+    assert_eq!(
+        ProviderId::default_order(),
+        vec![
+            ProviderId::Gemini,
+            ProviderId::Groq,
+            ProviderId::OpenRouter,
+            ProviderId::Deepseek,
+            ProviderId::Managed
+        ]
+    );
+    assert_eq!(
+        ProviderId::byo_order(),
+        vec![
+            ProviderId::Gemini,
+            ProviderId::Groq,
+            ProviderId::OpenRouter,
+            ProviderId::Deepseek
+        ]
+    );
 }
 
 #[test]
@@ -232,6 +257,10 @@ fn providers_have_recommended_models_by_default() {
     assert_eq!(
         Provider::default_model(ProviderId::OpenRouter),
         "google/gemma-4-26b-a4b-it:free"
+    );
+    assert_eq!(
+        Provider::default_model(ProviderId::Deepseek),
+        "deepseek-flash"
     );
 }
 

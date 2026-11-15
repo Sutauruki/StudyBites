@@ -2,8 +2,8 @@
 
 ## Confirmed products
 
-- Windows and Android apps are offline-first, use a one-time license, and let students paste their own AI keys into the app. The price is not set yet.
-- A later web version will use accounts, subscriptions, and managed AI. In-app key pasting stays; a managed "StudyBites AI" provider will be added beside it.
+- Windows and Android apps are offline-first, use a one-time license, and let students paste their own AI keys into the app. An optional managed "StudyBites AI" Worker can serve as the last provider fallback when the build is configured for it. The price is not set yet.
+- A later web version remains a separate product using accounts and subscriptions. In-app key pasting stays; the managed AI Worker does not make the desktop/mobile apps account-based.
 
 ## Daily limits and cost target
 
@@ -21,10 +21,17 @@ and offline study use no AI and are uncapped.
 
 ## AI
 
+- The BYO-key providers are Google Gemini, Groq, OpenRouter, and DeepSeek. The
+  existing default order remains Gemini, Groq, OpenRouter, then DeepSeek.
 - Gemini 2.5 Flash-Lite is the cost target for photo transcription, notes, normal tutor work, and marking.
 - Gemini 2.5 Flash is for harder smart questions; thinking is low.
+- DeepSeek V4.1 Flash costs about $0.15 per million cache-miss input tokens and
+  $0.60 per million output tokens off-peak, double at peak; cache-hit input is
+  cheaper. Gemini stays preferred for photo transcription until handwriting
+  quality has been compared.
 - Managed plans use a paid key. Model names remain settings because Google retires models.
 - A bought key never ships in the app. It lives as a Cloudflare Worker secret, and the app calls the Worker with the activation code.
+- The Worker verifies the signed activation payload and applies per-license UTC daily limits. It does not attest the device fingerprint; Cloudflare KV counters are best-effort under concurrent requests and are not billing records.
 
 ## Web stack
 
@@ -56,5 +63,5 @@ real-time chat.
 
 - Do Not Disturb is Android-only, opt-in, priority-only by default, and always restored afterwards. iOS, Windows, and web do not support it.
 - Session state must survive Android killing the app.
-- Settings will offer bug reports with a summary, details, and up to three screenshots. The app calls a small Cloudflare Worker, which emails the developer through Resend. No email key ships in the app; reports are rate-limited per device, IP, and day and queued locally while offline.
+- Settings offers opt-in bug reports with a summary, details, and up to three screenshots. The app calls a small Cloudflare Worker, which emails the developer through Resend. No email key ships in the app; reports are rate-limited per device, IP, and day and queued locally while offline. Technical details omit notes, cards, subjects, file names, API keys, and licence codes.
 - Nibble recording is last because phone microphones are weak from the back of a hall. The lecturer-consent QR idea is retained for then.

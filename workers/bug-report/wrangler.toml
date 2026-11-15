@@ -1,0 +1,7 @@
+name = "studybites-bug-report"
+main = "src/index.ts"
+compatibility_date = "2026-11-12"
+workers_dev = true
+
+[[kv_namespaces]]
+binding = "RATE"

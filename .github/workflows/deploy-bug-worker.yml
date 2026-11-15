@@ -1,0 +1,57 @@
+name: Deploy bug report Worker
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "workers/bug-report/**"
+      - ".github/workflows/deploy-bug-worker.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: workers/bug-report
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: workers/bug-report/package-lock.json
+
+      - name: Install Worker dependencies
+        run: npm ci
+
+      - name: Test Worker
+        run: npm test
+
+      - name: Typecheck Worker
+        run: npm run typecheck
+
+      - name: Deploy bug report Worker
+        id: deploy
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: workers/bug-report
+          command: deploy
+          secrets: |
+            RESEND_API_KEY
+            BUG_REPORT_TO
+        env:
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          BUG_REPORT_TO: ${{ secrets.BUG_REPORT_TO }}
+
+      - name: Write deployment summary
+        env:
+          DEPLOYMENT_URL: ${{ steps.deploy.outputs.deployment-url }}
+        run: |
+          echo "Bug report Worker deployed: ${DEPLOYMENT_URL}" >> "$GITHUB_STEP_SUMMARY"

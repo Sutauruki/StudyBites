@@ -1,0 +1,18 @@
+[package]
+name = "tauri-plugin-dnd"
+version.workspace = true
+authors.workspace = true
+description = ""
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+exclude = ["/examples", "/dist-js", "/guest-js", "/node_modules"]
+links = "tauri-plugin-dnd"
+
+[dependencies]
+tauri = { version = "2.12", default-features = false }
+serde = { workspace = true }
+thiserror = { workspace = true }
+
+[build-dependencies]
+tauri-plugin = { version = "2", features = ["build"] }

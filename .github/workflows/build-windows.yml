@@ -79,6 +79,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           STUDYBITES_LICENSE_PUBKEY: ${{ secrets.STUDYBITES_LICENSE_PUBKEY }}
+          STUDYBITES_BUG_REPORT_URL: ${{ vars.STUDYBITES_BUG_REPORT_URL }}
+          STUDYBITES_AI_URL: ${{ vars.STUDYBITES_AI_URL }}
         with:
           args: --bundles nsis
 

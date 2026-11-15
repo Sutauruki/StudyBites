@@ -67,6 +67,9 @@ pub fn clear(account: &str) -> Result<(), String> {
 }
 
 pub fn set_provider_key(db: &Db, provider: ProviderId, secret: &str) -> Result<(), String> {
+    if provider == ProviderId::Managed {
+        return Err("Managed AI does not use a personal API key.".into());
+    }
     let secret = secret.trim();
     #[cfg(target_os = "android")]
     {
@@ -87,6 +90,9 @@ pub fn set_provider_key(db: &Db, provider: ProviderId, secret: &str) -> Result<(
 }
 
 pub fn provider_key(db: &Db, provider: ProviderId) -> Result<Option<String>, String> {
+    if provider == ProviderId::Managed {
+        return Err("Managed AI does not use a personal API key.".into());
+    }
     #[cfg(target_os = "android")]
     {
         db.setting(&setting_for(&format!("ai.{}", provider.as_str())))
@@ -138,7 +144,7 @@ pub fn github_token(db: &Db) -> Result<Option<String>, String> {
 ///
 /// Only the fact that a key exists crosses the IPC boundary, never the key.
 pub fn configured(db: &Db) -> Result<Vec<ProviderId>, String> {
-    ProviderId::default_order()
+    ProviderId::byo_order()
         .into_iter()
         .filter_map(|id| match provider_key(db, id) {
             Ok(Some(_)) => Some(Ok(id)),

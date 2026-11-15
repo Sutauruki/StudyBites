@@ -48,6 +48,48 @@ fn issue_for(profile: &DeviceProfile, buyer: &str) -> String {
     license.encode(&signature.to_bytes()).unwrap()
 }
 
+#[test]
+fn managed_ai_license_fixture_matches_rust_verification() {
+    let fixture: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../workers/ai-proxy/test/fixtures/license.json"
+    ))
+    .unwrap();
+    let mut public_key = [0; 32];
+    for (index, byte) in public_key.iter_mut().enumerate() {
+        *byte = u8::from_str_radix(
+            &fixture["publicKeyHex"].as_str().unwrap()[index * 2..index * 2 + 2],
+            16,
+        )
+        .unwrap();
+    }
+
+    let code = fixture["activationCode"].as_str().unwrap();
+    let verified = license::verify(code, &public_key).unwrap();
+    assert_eq!(
+        verified.license().license_id.to_string(),
+        fixture["licenseId"].as_str().unwrap()
+    );
+    assert_eq!(
+        verified.license().buyer_name,
+        fixture["buyerName"].as_str().unwrap()
+    );
+    assert_eq!(
+        verified.license().issued_days,
+        fixture["issuedDays"].as_u64().unwrap() as u32
+    );
+    assert_eq!(
+        verified.license().features,
+        fixture["features"].as_u64().unwrap() as u16
+    );
+
+    let normalized = code
+        .to_lowercase()
+        .replace('-', " ")
+        .replace('1', "I")
+        .replace('0', "O");
+    assert!(license::verify(&normalized, &public_key).is_ok());
+}
+
 // ---- base32 -------------------------------------------------------------
 
 #[test]

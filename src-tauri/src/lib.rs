@@ -1,5 +1,6 @@
 mod commands;
 mod keys;
+mod managed_ai;
 mod phase2;
 mod practice;
 mod state;
@@ -7,6 +8,7 @@ mod worker;
 
 use state::AppState;
 use std::sync::Arc;
+use studybites_core::study;
 use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -15,8 +17,17 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dnd::init())
         .setup(|app| {
             let state = AppState::load(app.handle())?;
+            if state.is_unlocked() {
+                let db = state
+                    .db
+                    .lock()
+                    .map_err(|_| "database lock failed".to_string())?;
+                study::close_stale_sessions(&db, 12)
+                    .map_err(|err| tauri::Error::Anyhow(err.into()))?;
+            }
             app.manage(state);
 
             // One background worker drains the ingestion queue.
@@ -51,12 +62,19 @@ pub fn run() {
             phase2::material_upload,
             phase2::material_upload_bytes,
             phase2::material_upload_uri,
+            phase2::material_upload_photos,
             phase2::file_preview_text,
             phase2::file_preview_text_bytes,
             phase2::file_preview_text_uri,
             phase2::materials_list,
             phase2::material_set_topic,
             phase2::material_delete,
+            phase2::material_pages_get,
+            phase2::material_page_image_get,
+            phase2::material_page_text_set,
+            phase2::material_diagrams_set,
+            phase2::material_transcript_confirm,
+            phase2::material_notes_get,
             phase2::material_save_original,
             phase2::topic_suggest,
             phase2::scheme_parse,
@@ -67,18 +85,25 @@ pub fn run() {
             phase2::typed_answers_set,
             phase2::due_counts,
             phase2::session_start,
+            phase2::session_resume,
             phase2::session_grade,
             phase2::session_end,
             phase2::mastery,
             phase2::queue_status,
             phase2::queue_retry,
+            phase2::queue_wake,
             phase2::providers_list,
+            phase2::ai_status,
             phase2::provider_key_set,
             phase2::provider_models,
+            phase2::provider_key_test,
             phase2::provider_model_set,
             phase2::github_token_set,
             phase2::github_token_present,
             phase2::update_check,
+            phase2::bug_report_available,
+            phase2::bug_report_send,
+            phase2::bug_report_flush,
             // Phase 5 — CBT practice tests
             practice::cbt_available,
             practice::cbt_start,

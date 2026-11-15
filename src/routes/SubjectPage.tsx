@@ -5,6 +5,7 @@ import {
   type ExamStatus,
   type ExplainResult,
   type Material,
+  type Note,
   type Subject,
   type Topic,
   type TopicMastery,
@@ -12,6 +13,7 @@ import {
 import { Banner, Empty, Loading, Modal } from "../components/ui";
 import { SchemeImportDialog } from "./SchemeImportDialog";
 import { UploadDialog } from "./UploadDialog";
+import { PhotoReviewDialog } from "./PhotoReviewDialog";
 
 /**
  * Subject detail: the scheme-of-work outline editor (Brief 3.2).
@@ -36,6 +38,7 @@ export function SubjectPage({
   const [editing, setEditing] = useState<Topic | null>(null);
   const [uploading, setUploading] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [reviewMaterialId, setReviewMaterialId] = useState<number | null>(null);
   // Subtopics stay folded until asked for: a full scheme of work should
   // fit on one screen.
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
@@ -67,6 +70,18 @@ export function SubjectPage({
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    if (
+      !materials.some(
+        (material) => material.status === "queued" || material.status === "processing",
+      )
+    ) {
+      return;
+    }
+    const timer = window.setInterval(() => void refresh(), 3000);
+    return () => window.clearInterval(timer);
+  }, [materials, refresh]);
 
   const run = async (action: () => Promise<unknown>) => {
     try {
@@ -111,6 +126,7 @@ export function SubjectPage({
         onChanged={refresh}
         onError={setError}
         onStudy={onStudy}
+        onReview={setReviewMaterialId}
       />
 
       <ExamSection subject={subject} onChanged={refresh} onError={setError} />
@@ -189,6 +205,17 @@ export function SubjectPage({
           onClose={() => setUploading(false)}
           onUploaded={(message) => {
             setNotice(message);
+            void refresh();
+          }}
+        />
+      )}
+
+      {reviewMaterialId !== null && (
+        <PhotoReviewDialog
+          materialId={reviewMaterialId}
+          onClose={() => setReviewMaterialId(null)}
+          onConfirmed={() => {
+            setNotice("Transcript confirmed. Notes and cards are processing in the background.");
             void refresh();
           }}
         />
@@ -445,18 +472,21 @@ function MaterialsSection({
   onChanged,
   onError,
   onStudy,
+  onReview,
 }: {
   materials: Material[];
   onChanged: () => void;
   onError: (message: string) => void;
   onStudy: (minutes: number) => void;
+  onReview: (materialId: number) => void;
 }) {
   const label: Record<Material["status"], string> = {
     queued: "Queued",
     processing: "Processing",
     done: "Ready",
+    review: "Needs review",
     failed: "Failed",
-    paused: "Paused — daily limit",
+    paused: "Paused",
   };
 
   if (materials.length === 0) {
@@ -465,8 +495,8 @@ function MaterialsSection({
         <div className="stack">
           <span className="label">Material</span>
           <p className="muted">
-            Add today&rsquo;s notes or a lecture PDF. StudyBites reads it, writes compact notes
-            and cards, and files them under the topic you confirm.
+            Add today&rsquo;s notes, a lecture PDF or photos of your pages. StudyBites reads it,
+            writes compact notes and cards, and files them under the topic you confirm.
           </p>
         </div>
       </div>
@@ -489,28 +519,42 @@ function MaterialsSection({
 
       <div className="card list">
         {materials.map((material) => (
-          <div key={material.id} className="list__item list__item--static">
+          <div key={material.id} className="list__item list__item--static list__item--material">
             <div className="list__text">
               <div className="list__title">{material.originalFilename}</div>
               <div className="list__meta">
                 {label[material.status]}
                 {material.cardCount > 0 && ` · ${material.cardCount} cards`}
-                {material.error && material.status === "failed" && ` · ${material.error}`}
+                {material.error && (material.status === "failed" || material.status === "paused") &&
+                  ` · ${material.error}`}
               </div>
             </div>
-            <button
-              className="btn btn--ghost"
-              onClick={async () => {
-                try {
-                  const destination = await backend.pickSavePath(material.originalFilename);
-                  if (destination) await backend.materialSaveOriginal(material.id, destination);
-                } catch (err) {
-                  onError(errorText(err));
-                }
-              }}
-            >
-              Download original
-            </button>
+            {material.status === "review" && (
+              <button
+                className="btn btn--primary"
+                onClick={() => onReview(material.id)}
+              >
+                Review transcript
+              </button>
+            )}
+            {material.noteCount > 0 && (
+              <MaterialNotesButton material={material} onError={onError} />
+            )}
+            {material.mime !== "image/jpeg" && (
+              <button
+                className="btn btn--ghost"
+                onClick={async () => {
+                  try {
+                    const destination = await backend.pickSavePath(material.originalFilename);
+                    if (destination) await backend.materialSaveOriginal(material.id, destination);
+                  } catch (err) {
+                    onError(errorText(err));
+                  }
+                }}
+              >
+                Download original
+              </button>
+            )}
             <button
               className="btn btn--danger"
               onClick={async () => {
@@ -529,6 +573,64 @@ function MaterialsSection({
         ))}
       </div>
     </div>
+  );
+}
+
+function MaterialNotesButton({
+  material,
+  onError,
+}: {
+  material: Material;
+  onError: (message: string) => void;
+}) {
+  const [notes, setNotes] = useState<Note[] | null>(null);
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button
+        className="btn btn--ghost"
+        onClick={async () => {
+          if (open) {
+            setOpen(false);
+            return;
+          }
+          try {
+            setNotes(await backend.materialNotesGet(material.id));
+            setOpen(true);
+          } catch (err) {
+            onError(errorText(err));
+          }
+        }}
+      >
+        {open ? "Hide notes" : "View notes"}
+      </button>
+      {open && notes && (
+        <div className="material-notes">
+          {notes.map((note) => (
+            <article key={note.id} className="card card--pad stack">
+              <h3>{note.content.title}</h3>
+              {note.content.keyIdeas.map((idea, index) => <p key={index}>{idea}</p>)}
+              {note.content.definitions.map((definition) => (
+                <p key={definition.term}><strong>{definition.term}:</strong> {definition.meaning}</p>
+              ))}
+              {note.content.formulas.map((formula, index) => <p key={index}>{formula}</p>)}
+              {note.content.checkThis.length > 0 && (
+                <div>
+                  <span className="chip chip--accent">Check this</span>
+                  {note.content.checkThis.map((item, index) => <p key={index}>{item}</p>)}
+                </div>
+              )}
+              {note.content.aiAdditions.length > 0 && (
+                <div>
+                  <span className="chip chip--accent">Added by AI</span>
+                  {note.content.aiAdditions.map((item, index) => <p key={index}>{item}</p>)}
+                </div>
+              )}
+            </article>
+          ))}
+        </div>
+      )}
+    </>
   );
 }
 

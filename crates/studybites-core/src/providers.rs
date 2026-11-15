@@ -1,6 +1,6 @@
 //! Provider implementations and the fallback router (Brief 7).
 //!
-//! All three providers speak JSON over HTTPS and differ mainly in URL shape
+//! All providers speak JSON over HTTPS and differ mainly in URL shape
 //! and where the key goes, so one `chat()` per provider is enough; everything
 //! above it is shared.
 //!
@@ -9,10 +9,11 @@
 //! a network or a key.
 
 use crate::ai::{
-    AiError, AiProvider, DistillRequest, DistilledNote, GeneratedCard, ProviderId, SchemeEntry,
-    TopicMatch, TopicPreview,
+    AiError, AiProvider, DistillRequest, DistilledNote, GeneratedCard, PageTranscript, ProviderId,
+    SchemeEntry, TopicMatch, TopicPreview,
 };
 use crate::{ai, prompts};
+use base64::Engine;
 use std::time::Duration;
 
 /// Requests are given a generous ceiling: a slow connection is normal, and a
@@ -27,6 +28,16 @@ pub trait Http: Send + Sync {
         headers: &[(String, String)],
         body: &serde_json::Value,
     ) -> std::result::Result<String, HttpError>;
+
+    fn post_json_with_timeout(
+        &self,
+        url: &str,
+        headers: &[(String, String)],
+        body: &serde_json::Value,
+        _timeout: Duration,
+    ) -> std::result::Result<String, HttpError> {
+        self.post_json(url, headers, body)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -48,8 +59,18 @@ impl Http for UreqHttp {
         headers: &[(String, String)],
         body: &serde_json::Value,
     ) -> std::result::Result<String, HttpError> {
+        self.post_json_with_timeout(url, headers, body, TIMEOUT)
+    }
+
+    fn post_json_with_timeout(
+        &self,
+        url: &str,
+        headers: &[(String, String)],
+        body: &serde_json::Value,
+        timeout: Duration,
+    ) -> std::result::Result<String, HttpError> {
         let agent: ureq::Agent = ureq::Agent::config_builder()
-            .timeout_global(Some(TIMEOUT))
+            .timeout_global(Some(timeout))
             .build()
             .into();
 
@@ -144,6 +165,15 @@ pub fn classify_for(error: HttpError, model: &str) -> AiError {
     }
 }
 
+fn classify_for_provider(error: HttpError, provider: ProviderId, model: &str) -> AiError {
+    match (provider, error) {
+        (ProviderId::Deepseek, HttpError::Status { code: 402, .. }) => {
+            AiError::QuotaExhausted { until: None }
+        }
+        (_, error) => classify_for(error, model),
+    }
+}
+
 /// Providers rarely give a machine-readable reset time, so this is best
 /// effort; `None` leaves the caller to decide when to try again.
 fn retry_after_from_body(body: &str) -> Option<String> {
@@ -159,25 +189,57 @@ struct Chat<'a> {
     http: &'a dyn Http,
     api_key: &'a str,
     model: &'a str,
+    provider: ProviderId,
 }
 
 impl Chat<'_> {
-    /// OpenAI-compatible chat completions, used by Groq and OpenRouter.
+    /// OpenAI-compatible chat completions, used by Groq, OpenRouter, and DeepSeek.
     fn openai_style(
         &self,
         url: &str,
         system: &str,
         user: &str,
     ) -> std::result::Result<String, AiError> {
-        let body = serde_json::json!({
+        self.openai_style_content(url, system, serde_json::Value::String(user.to_string()))
+    }
+
+    fn openai_style_image(
+        &self,
+        url: &str,
+        system: &str,
+        user: &str,
+        image: &[u8],
+        mime: &str,
+    ) -> std::result::Result<String, AiError> {
+        let encoded = base64::engine::general_purpose::STANDARD.encode(image);
+        let content = serde_json::json!([
+            {"type": "text", "text": user},
+            {
+                "type": "image_url",
+                "image_url": {"url": format!("data:{mime};base64,{encoded}")}
+            }
+        ]);
+        self.openai_style_content(url, system, content)
+    }
+
+    fn openai_style_content(
+        &self,
+        url: &str,
+        system: &str,
+        user_content: serde_json::Value,
+    ) -> std::result::Result<String, AiError> {
+        let mut body = serde_json::json!({
             "model": self.model,
             "messages": [
                 {"role": "system", "content": system},
-                {"role": "user", "content": user},
+                {"role": "user", "content": user_content},
             ],
             "temperature": 0.2,
             "response_format": {"type": "json_object"},
         });
+        if self.provider == ProviderId::Deepseek {
+            body["thinking"] = serde_json::json!({"type": "disabled"});
+        }
         let headers = vec![
             (
                 "Authorization".to_string(),
@@ -189,7 +251,7 @@ impl Chat<'_> {
         let raw = self
             .http
             .post_json(url, &headers, &body)
-            .map_err(classify)?;
+            .map_err(|error| classify_for_provider(error, self.provider, self.model))?;
         let parsed: serde_json::Value = serde_json::from_str(&raw)
             .map_err(|e| AiError::BadResponse(format!("response was not JSON: {e}")))?;
 
@@ -197,6 +259,42 @@ impl Chat<'_> {
             .pointer("/choices/0/message/content")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string())
+            .ok_or_else(|| AiError::BadResponse("response had no message content".into()))
+    }
+
+    fn managed(
+        &self,
+        url: &str,
+        task: &str,
+        system: &str,
+        user_content: serde_json::Value,
+        temperature: f64,
+    ) -> std::result::Result<String, AiError> {
+        let body = serde_json::json!({
+            "task": task,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user_content},
+            ],
+            "temperature": temperature,
+        });
+        let headers = vec![
+            (
+                "Authorization".to_string(),
+                format!("Bearer {}", self.api_key),
+            ),
+            ("Content-Type".to_string(), "application/json".to_string()),
+        ];
+        let raw = self
+            .http
+            .post_json(url, &headers, &body)
+            .map_err(|error| classify_for_provider(error, self.provider, self.model))?;
+        let parsed: serde_json::Value = serde_json::from_str(&raw)
+            .map_err(|e| AiError::BadResponse(format!("response was not JSON: {e}")))?;
+        parsed
+            .pointer("/choices/0/message/content")
+            .and_then(|value| value.as_str())
+            .map(str::to_string)
             .ok_or_else(|| AiError::BadResponse("response had no message content".into()))
     }
 
@@ -262,6 +360,58 @@ impl Chat<'_> {
             .map(|s| s.to_string())
             .ok_or_else(|| AiError::BadResponse("response had no text".into()))
     }
+
+    fn gemini_image(
+        &self,
+        system: &str,
+        user: &str,
+        image: &[u8],
+        mime: &str,
+    ) -> std::result::Result<String, AiError> {
+        let encoded = base64::engine::general_purpose::STANDARD.encode(image);
+        let url = format!(
+            "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent",
+            self.model
+        );
+        let body = serde_json::json!({
+            "systemInstruction": {"parts": [{"text": system}]},
+            "contents": [{
+                "role": "user",
+                "parts": [
+                    {"text": user},
+                    {"inline_data": {"mime_type": mime, "data": encoded}}
+                ]
+            }],
+            "generationConfig": {
+                "temperature": 0.0,
+                "responseMimeType": "application/json"
+            }
+        });
+        let headers = vec![
+            ("x-goog-api-key".to_string(), self.api_key.to_string()),
+            ("Content-Type".to_string(), "application/json".to_string()),
+        ];
+        let raw = self
+            .http
+            .post_json(&url, &headers, &body)
+            .map_err(|error| classify_for(error, self.model))?;
+        let parsed: serde_json::Value = serde_json::from_str(&raw)
+            .map_err(|e| AiError::BadResponse(format!("response was not JSON: {e}")))?;
+        if parsed
+            .pointer("/candidates/0/finishReason")
+            .and_then(|value| value.as_str())
+            .is_some_and(|reason| reason == "SAFETY" || reason == "PROHIBITED_CONTENT")
+        {
+            return Err(AiError::BadResponse(
+                "the provider declined to answer for this material".into(),
+            ));
+        }
+        parsed
+            .pointer("/candidates/0/content/parts/0/text")
+            .and_then(|value| value.as_str())
+            .map(str::to_string)
+            .ok_or_else(|| AiError::BadResponse("response had no text".into()))
+    }
 }
 
 /// A configured provider: which service, which model, whose key.
@@ -270,6 +420,7 @@ pub struct Provider<'a> {
     pub api_key: String,
     pub model: String,
     pub http: &'a dyn Http,
+    managed_endpoint: Option<String>,
 }
 
 impl<'a> Provider<'a> {
@@ -281,6 +432,8 @@ impl<'a> Provider<'a> {
             ProviderId::Gemini => "gemini-3.5-flash-lite",
             ProviderId::Groq => "openai/gpt-oss-20b",
             ProviderId::OpenRouter => "google/gemma-4-26b-a4b-it:free",
+            ProviderId::Deepseek => "deepseek-flash",
+            ProviderId::Managed => "",
         }
     }
 
@@ -290,6 +443,21 @@ impl<'a> Provider<'a> {
             api_key,
             model: Self::default_model(id).to_string(),
             http,
+            managed_endpoint: None,
+        }
+    }
+
+    pub fn managed(
+        endpoint: impl Into<String>,
+        activation_code: String,
+        http: &'a dyn Http,
+    ) -> Self {
+        Self {
+            id: ProviderId::Managed,
+            api_key: activation_code,
+            model: "managed".into(),
+            http,
+            managed_endpoint: Some(endpoint.into()),
         }
     }
 
@@ -301,14 +469,41 @@ impl<'a> Provider<'a> {
         self
     }
 
-    fn chat(&self, system: &str, user: &str) -> std::result::Result<String, AiError> {
-        self.chat_maybe_search(system, user, false)
+    pub fn supports_images(&self) -> bool {
+        let model = self.model.to_ascii_lowercase();
+        match self.id {
+            ProviderId::Gemini => true,
+            ProviderId::Groq => {
+                model.contains("llama-4-scout")
+                    || model.contains("llama-4-maverick")
+                    || model.contains("llama-3.2-11b-vision")
+            }
+            ProviderId::OpenRouter => {
+                model.contains("gemini-")
+                    || model.contains("gpt-4o")
+                    || model.contains("claude-3")
+                    || model.contains("claude-sonnet-4")
+                    || model.contains("llama-4")
+                    || model.contains("qwen2.5-vl")
+                    || model.contains("vision")
+            }
+            ProviderId::Deepseek => matches!(
+                model.trim(),
+                "deepseek-flash" | "deepseek-v4-flash" | "deepseek-v4-flash-vision-exp"
+            ),
+            ProviderId::Managed => true,
+        }
+    }
+
+    fn chat(&self, task: &str, system: &str, user: &str) -> std::result::Result<String, AiError> {
+        self.chat_maybe_search(task, system, user, false)
     }
 
     /// Only Gemini can ground in a search; the others answer from the model
     /// alone, which is still better than refusing.
     fn chat_maybe_search(
         &self,
+        task: &str,
         system: &str,
         user: &str,
         search: bool,
@@ -320,7 +515,21 @@ impl<'a> Provider<'a> {
             http: self.http,
             api_key: &self.api_key,
             model: &self.model,
+            provider: self.id,
         };
+        if self.id == ProviderId::Managed {
+            let endpoint = self
+                .managed_endpoint
+                .as_deref()
+                .ok_or_else(|| AiError::Auth("managed AI is not configured".into()))?;
+            return chat.managed(
+                endpoint,
+                task,
+                system,
+                serde_json::Value::String(user.to_string()),
+                0.2,
+            );
+        }
         match self.id {
             ProviderId::Gemini => chat.gemini_with(system, user, search),
             ProviderId::Groq => chat.openai_style(
@@ -333,6 +542,10 @@ impl<'a> Provider<'a> {
                 system,
                 user,
             ),
+            ProviderId::Deepseek => {
+                chat.openai_style("https://api.deepseek.com/chat/completions", system, user)
+            }
+            ProviderId::Managed => unreachable!(),
         }
     }
 }
@@ -344,20 +557,93 @@ impl AiProvider for Provider<'_> {
 
     fn distill(&self, request: &DistillRequest) -> std::result::Result<DistilledNote, AiError> {
         let user = prompts::distill_user(
+            request.source,
             &request.subject,
             request.topic.as_deref(),
             request.heading.as_deref(),
             &request.text,
         );
-        let raw = self.chat(prompts::DISTILL_SYSTEM, &user)?;
+        let raw = self.chat("tutor", prompts::distill_system(request.source), &user)?;
         ai::parse_note(&raw).map_err(|e| AiError::BadResponse(e.to_string()))
+    }
+
+    fn transcribe_page(
+        &self,
+        image: &[u8],
+        mime: &str,
+    ) -> std::result::Result<PageTranscript, AiError> {
+        if self.api_key.trim().is_empty() {
+            return Err(AiError::Auth("no API key has been set".into()));
+        }
+        if !self.supports_images() {
+            return Err(AiError::Unsupported(format!(
+                "the chosen {} model cannot read images",
+                self.id.as_str()
+            )));
+        }
+        let chat = Chat {
+            http: self.http,
+            api_key: &self.api_key,
+            model: &self.model,
+            provider: self.id,
+        };
+        let raw = match self.id {
+            ProviderId::Gemini => chat.gemini_image(
+                prompts::TRANSCRIBE_SYSTEM,
+                prompts::transcribe_user(),
+                image,
+                mime,
+            )?,
+            ProviderId::Groq => chat.openai_style_image(
+                "https://api.groq.com/openai/v1/chat/completions",
+                prompts::TRANSCRIBE_SYSTEM,
+                prompts::transcribe_user(),
+                image,
+                mime,
+            )?,
+            ProviderId::OpenRouter => chat.openai_style_image(
+                "https://openrouter.ai/api/v1/chat/completions",
+                prompts::TRANSCRIBE_SYSTEM,
+                prompts::transcribe_user(),
+                image,
+                mime,
+            )?,
+            ProviderId::Deepseek => chat.openai_style_image(
+                "https://api.deepseek.com/chat/completions",
+                prompts::TRANSCRIBE_SYSTEM,
+                prompts::transcribe_user(),
+                image,
+                mime,
+            )?,
+            ProviderId::Managed => {
+                let endpoint = self
+                    .managed_endpoint
+                    .as_deref()
+                    .ok_or_else(|| AiError::Auth("managed AI is not configured".into()))?;
+                let encoded = base64::engine::general_purpose::STANDARD.encode(image);
+                chat.managed(
+                    endpoint,
+                    "photo",
+                    prompts::TRANSCRIBE_SYSTEM,
+                    serde_json::json!([
+                        {"type": "text", "text": prompts::transcribe_user()},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": format!("data:{mime};base64,{encoded}")}
+                        }
+                    ]),
+                    0.0,
+                )?
+            }
+        };
+        ai::parse_transcript(&raw).map_err(|error| AiError::BadResponse(error.to_string()))
     }
 
     fn generate_cards(
         &self,
         note: &DistilledNote,
     ) -> std::result::Result<Vec<GeneratedCard>, AiError> {
-        let raw = self.chat(prompts::CARDS_SYSTEM, &prompts::cards_user(note))?;
+        let raw = self.chat("tutor", prompts::CARDS_SYSTEM, &prompts::cards_user(note))?;
         let (cards, _rejected) =
             ai::parse_cards(&raw).map_err(|e| AiError::BadResponse(e.to_string()))?;
         if cards.is_empty() {
@@ -381,6 +667,7 @@ impl AiProvider for Provider<'_> {
             });
         }
         let raw = self.chat(
+            "tutor",
             prompts::TOPIC_MATCH_SYSTEM,
             &prompts::topic_match_user(text, topics),
         )?;
@@ -399,7 +686,7 @@ impl AiProvider for Provider<'_> {
     }
 
     fn parse_scheme(&self, text: &str) -> std::result::Result<Vec<SchemeEntry>, AiError> {
-        let raw = self.chat(prompts::SCHEME_SYSTEM, &prompts::scheme_user(text))?;
+        let raw = self.chat("tutor", prompts::SCHEME_SYSTEM, &prompts::scheme_user(text))?;
         let value = ai::extract_json(&raw).map_err(|e| AiError::BadResponse(e.to_string()))?;
         let array = match value {
             serde_json::Value::Array(items) => items,
@@ -433,6 +720,7 @@ impl AiProvider for Provider<'_> {
         with_search: bool,
     ) -> std::result::Result<TopicPreview, AiError> {
         let raw = self.chat_maybe_search(
+            "smart",
             prompts::PREVIEW_SYSTEM,
             &prompts::preview_user(subject, recent_topics, next_topic),
             with_search,
@@ -446,6 +734,7 @@ impl AiProvider for Provider<'_> {
         notes: &[DistilledNote],
     ) -> std::result::Result<String, AiError> {
         let raw = self.chat(
+            "tutor",
             prompts::EXPLAIN_SYSTEM,
             &prompts::explain_user(question, notes),
         )?;
@@ -465,6 +754,7 @@ impl AiProvider for Provider<'_> {
         typed: &str,
     ) -> std::result::Result<crate::marking::Mark, AiError> {
         let raw = self.chat(
+            "mark",
             prompts::MARK_SYSTEM,
             &prompts::mark_user(question, expected, typed),
         )?;
@@ -552,17 +842,30 @@ pub fn list_models(
             "https://api.groq.com/openai/v1/models".to_string(),
             vec![("Authorization".to_string(), format!("Bearer {api_key}"))],
         ),
-        // OpenRouter publishes this without a key.
-        ProviderId::OpenRouter => (
-            "https://openrouter.ai/api/v1/models".to_string(),
-            vec![("Accept".to_string(), "application/json".to_string())],
+        // OpenRouter publishes this without a key, but accepts one when
+        // validating a newly entered key from Settings.
+        ProviderId::OpenRouter => {
+            let mut headers = vec![("Accept".to_string(), "application/json".to_string())];
+            if !api_key.trim().is_empty() {
+                headers.push(("Authorization".to_string(), format!("Bearer {api_key}")));
+            }
+            ("https://openrouter.ai/api/v1/models".to_string(), headers)
+        }
+        ProviderId::Deepseek => (
+            "https://api.deepseek.com/models".to_string(),
+            vec![("Authorization".to_string(), format!("Bearer {api_key}"))],
         ),
+        ProviderId::Managed => {
+            return Err(AiError::Unsupported(
+                "managed AI does not expose a user-selectable model list".into(),
+            ));
+        }
     };
 
     // A null body means GET to the client the app supplies.
     let raw = http
         .post_json(&url, &headers, &serde_json::Value::Null)
-        .map_err(classify)?;
+        .map_err(|error| classify_for_provider(error, id, ""))?;
     let parsed: serde_json::Value = serde_json::from_str(&raw)
         .map_err(|e| AiError::BadResponse(format!("the model list was not JSON: {e}")))?;
 

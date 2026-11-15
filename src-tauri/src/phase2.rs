@@ -5,16 +5,18 @@
 //! onto a worker rather than blocking the window.
 
 use crate::keys;
+use crate::managed_ai;
 use crate::state::{to_ipc, AppState, LOCK_FAILED};
+use base64::Engine as _;
 use std::sync::MutexGuard;
 use studybites_core::ai::{AiProvider, ProviderId, SchemeEntry, TopicMatch};
 use studybites_core::embed::{Embedder, LexicalEmbedder};
 use studybites_core::providers::{Attempt, Http, Provider, UreqGetHttp, UreqHttp};
 use studybites_core::{
-    files, ingest, jobs, library, marking, preview, quota, study, subjects, update, Db, Rating,
-    Subject, Topic,
+    bugreport, files, ingest, jobs, library, marking, preview, quota, study, subjects, update, Db,
+    Rating, Subject, Topic,
 };
-use tauri::{Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 type Ipc<T> = Result<T, String>;
 
@@ -25,6 +27,66 @@ fn lock<'a>(state: &'a State<'_, AppState>) -> Result<MutexGuard<'a, Db>, String
     state.db.lock().map_err(|_| LOCK_FAILED.to_string())
 }
 
+fn bug_report_url() -> Option<&'static str> {
+    option_env!("STUDYBITES_BUG_REPORT_URL")
+        .map(str::trim)
+        .filter(|url| !url.is_empty())
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(tag = "status", content = "message", rename_all = "camelCase")]
+pub enum BugReportResult {
+    Sent,
+    Queued,
+    RateLimited,
+    Rejected(String),
+}
+
+#[tauri::command]
+pub fn bug_report_available() -> bool {
+    bug_report_url().is_some()
+}
+
+#[tauri::command]
+pub async fn bug_report_send(app: AppHandle, report: bugreport::BugReport) -> Ipc<BugReportResult> {
+    let url = bug_report_url().ok_or("Bug report sending is not configured in this build.")?;
+    if !app.state::<AppState>().is_unlocked() {
+        return Err(crate::state::NOT_ACTIVATED.to_string());
+    }
+    let report = report.validate().map_err(to_ipc)?;
+    tauri::async_runtime::spawn_blocking(move || match bugreport::send(&UreqHttp, url, &report) {
+        bugreport::SendOutcome::Sent => Ok(BugReportResult::Sent),
+        bugreport::SendOutcome::RateLimited => Ok(BugReportResult::RateLimited),
+        bugreport::SendOutcome::Rejected(message) => Ok(BugReportResult::Rejected(message)),
+        bugreport::SendOutcome::Retryable => {
+            let state = app.state::<AppState>();
+            let db = lock(&state)?;
+            bugreport::outbox_add(&db, &report).map_err(to_ipc)?;
+            Ok(BugReportResult::Queued)
+        }
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+pub async fn bug_report_flush(app: AppHandle) -> Ipc<usize> {
+    let Some(url) = bug_report_url() else {
+        return Ok(0);
+    };
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let _flush = state
+            .bug_report_flush
+            .lock()
+            .map_err(|_| "bug report queue lock failed")?;
+        let db = lock(&state)?;
+        bugreport::flush(&db, &UreqHttp, url).map_err(to_ipc)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
 /// Build the provider list in priority order, skipping any without a key.
 /// The keys are read here and never leave Rust.
 /// Settings key holding the model the student chose for a provider.
@@ -32,9 +94,13 @@ fn model_key(id: ProviderId) -> String {
     format!("ai.model.{}", id.as_str())
 }
 
-fn providers<'a>(db: &Db, http: &'a dyn Http) -> Ipc<Vec<Provider<'a>>> {
+fn providers<'a>(
+    db: &Db,
+    app_data: &std::path::Path,
+    http: &'a dyn Http,
+) -> Ipc<Vec<Provider<'a>>> {
     let mut list = Vec::new();
-    for id in ProviderId::default_order() {
+    for id in ProviderId::byo_order() {
         let Some(key) = keys::provider_key(db, id)? else {
             continue;
         };
@@ -49,6 +115,9 @@ fn providers<'a>(db: &Db, http: &'a dyn Http) -> Ipc<Vec<Provider<'a>>> {
             list.push(provider);
         }
     }
+    if let Some(provider) = managed_ai::provider(app_data, http)? {
+        list.push(provider);
+    }
     Ok(list)
 }
 
@@ -58,11 +127,12 @@ fn require_providers<'a>(
 ) -> Ipc<Vec<Provider<'a>>> {
     let list = {
         let db = lock(state)?;
-        providers(&db, http)?
+        providers(&db, &state.app_data, http)?
     };
     if list.is_empty() {
         return Err(
-            "No AI provider is ready. Open Settings, add a key, then choose a model for it.".into(),
+            "No AI provider is ready. Add a provider key in Settings or configure StudyBites AI for this build."
+                .into(),
         );
     }
     Ok(list)
@@ -189,6 +259,27 @@ pub async fn material_upload_uri(
     material_upload_bytes(app, state, subject_id, topic_id, filename, bytes).await
 }
 
+#[tauri::command]
+pub fn material_upload_photos(
+    app: tauri::AppHandle,
+    state: State<AppState>,
+    subject_id: i64,
+    topic_id: Option<i64>,
+    pages: Vec<Vec<u8>>,
+) -> Ipc<ingest::Accepted> {
+    let app_data = state.app_data.clone();
+    let file_key = state.file_key();
+    let accepted = {
+        let mut db = lock(&state)?;
+        ingest::accept_photo_pages(&mut db, &app_data, &file_key, subject_id, topic_id, &pages)
+            .map_err(to_ipc)?
+    };
+    if accepted.duplicate_of.is_none() {
+        crate::worker::wake(&app);
+    }
+    Ok(accepted)
+}
+
 /// Read a file's text without storing anything, for the topic-match preview
 /// and for scheme-of-work parsing.
 #[tauri::command]
@@ -249,13 +340,80 @@ pub fn material_set_topic(
 pub fn material_delete(state: State<AppState>, id: i64) -> Ipc<()> {
     let app_data = state.app_data.clone();
     let db = lock(&state)?;
-    let cold = library::material_delete(&db, id).map_err(to_ipc)?;
-    if let Some(cold) = cold {
+    let cold_files = library::material_delete(&db, id).map_err(to_ipc)?;
+    for cold in cold_files {
         // A leftover file is untidy, not harmful, so this is not worth
         // failing the delete over.
-        let _ = files::cold_delete(&app_data, &cold);
+        if let Err(error) = files::cold_delete(&app_data, &cold) {
+            eprintln!("StudyBites could not remove a cold-stored material file: {error}");
+        }
     }
     Ok(())
+}
+
+#[tauri::command]
+pub fn material_pages_get(
+    state: State<AppState>,
+    material_id: i64,
+) -> Ipc<Vec<library::MaterialPage>> {
+    let db = lock(&state)?;
+    library::pages_for_material(&db, material_id).map_err(to_ipc)
+}
+
+#[tauri::command]
+pub fn material_page_image_get(state: State<AppState>, page_id: i64) -> Ipc<String> {
+    let app_data = state.app_data.clone();
+    let file_key = state.file_key();
+    let db = lock(&state)?;
+    let page = library::page_get(&db, page_id).map_err(to_ipc)?;
+    let cold_path = page
+        .cold_path
+        .ok_or("the stored photo is no longer available")?;
+    let bytes = files::cold_read(&app_data, &file_key, &cold_path).map_err(to_ipc)?;
+    Ok(base64::engine::general_purpose::STANDARD.encode(bytes))
+}
+
+#[tauri::command]
+pub fn material_page_text_set(
+    state: State<AppState>,
+    page_id: i64,
+    text: String,
+) -> Ipc<library::MaterialPage> {
+    if text.chars().count() > 20_000 {
+        return Err("A page transcript must be 20,000 characters or fewer.".into());
+    }
+    let db = lock(&state)?;
+    library::page_set_transcript(&db, page_id, &text).map_err(to_ipc)
+}
+
+#[tauri::command]
+pub fn material_diagrams_set(
+    state: State<AppState>,
+    page_id: i64,
+    rects_json: String,
+) -> Ipc<library::MaterialPage> {
+    let db = lock(&state)?;
+    library::diagrams_set(&db, page_id, &rects_json).map_err(to_ipc)
+}
+
+#[tauri::command]
+pub fn material_transcript_confirm(
+    app: tauri::AppHandle,
+    state: State<AppState>,
+    material_id: i64,
+) -> Ipc<usize> {
+    let chunks = {
+        let mut db = lock(&state)?;
+        ingest::confirm_transcript(&mut db, material_id).map_err(to_ipc)?
+    };
+    crate::worker::wake(&app);
+    Ok(chunks)
+}
+
+#[tauri::command]
+pub fn material_notes_get(state: State<AppState>, material_id: i64) -> Ipc<Vec<library::Note>> {
+    let db = lock(&state)?;
+    library::notes_for_material(&db, material_id).map_err(to_ipc)
 }
 
 /// Decompress and save the original file (Brief 3.10).
@@ -517,6 +675,12 @@ pub fn session_start(
 }
 
 #[tauri::command]
+pub fn session_resume(state: State<AppState>, session_id: i64) -> Ipc<Option<study::Session>> {
+    let db = lock(&state)?;
+    study::resume_session(&db, session_id).map_err(to_ipc)
+}
+
+#[tauri::command]
 pub fn session_grade(
     state: State<AppState>,
     session_id: Option<i64>,
@@ -639,6 +803,7 @@ pub struct QueueStatus {
     pub quota: Vec<quota::Usage>,
     /// When paused work resumes, if it is waiting on a quota reset.
     pub resumes_at: Option<String>,
+    pub paused_reason: Option<String>,
 }
 
 #[tauri::command]
@@ -652,6 +817,7 @@ pub fn queue_status(state: State<AppState>) -> Ipc<QueueStatus> {
         counts: jobs::counts(&db).map_err(to_ipc)?,
         quota: quota::usage_today(&db).map_err(to_ipc)?,
         resumes_at: quota::next_reset(&db, &names).map_err(to_ipc)?,
+        paused_reason: jobs::paused_reason(&db).map_err(to_ipc)?,
     })
 }
 
@@ -698,7 +864,7 @@ fn chosen_model(db: &Db, id: ProviderId) -> Ipc<String> {
 pub fn providers_list(state: State<AppState>) -> Ipc<Vec<ProviderInfo>> {
     let db = lock(&state)?;
     let configured = keys::configured(&db)?;
-    ProviderId::default_order()
+    ProviderId::byo_order()
         .into_iter()
         .map(|id| {
             Ok(ProviderInfo {
@@ -707,6 +873,8 @@ pub fn providers_list(state: State<AppState>) -> Ipc<Vec<ProviderInfo>> {
                     ProviderId::Gemini => "Google Gemini".into(),
                     ProviderId::Groq => "Groq".into(),
                     ProviderId::OpenRouter => "OpenRouter".into(),
+                    ProviderId::Deepseek => "DeepSeek".into(),
+                    ProviderId::Managed => unreachable!(),
                 },
                 configured: configured.contains(&id),
                 help_url: id.key_help_url().to_string(),
@@ -715,6 +883,12 @@ pub fn providers_list(state: State<AppState>) -> Ipc<Vec<ProviderInfo>> {
             })
         })
         .collect()
+}
+
+#[tauri::command]
+pub fn ai_status(state: State<AppState>) -> Ipc<managed_ai::Status> {
+    let _db = lock(&state)?;
+    managed_ai::status(&UreqGetHttp, &state.app_data)
 }
 
 /// The models a provider currently offers, asked of the provider itself.
@@ -732,10 +906,31 @@ pub async fn provider_models(state: State<'_, AppState>, provider: String) -> Ip
     studybites_core::providers::list_models(&UreqGetHttp, id, &key).map_err(|e| e.to_string())
 }
 
+/// Check a newly entered provider key without saving it.
+#[tauri::command]
+pub async fn provider_key_test(
+    state: State<'_, AppState>,
+    provider: String,
+    key: String,
+) -> Ipc<Vec<String>> {
+    let id = ProviderId::parse(&provider).ok_or("that is not a provider StudyBites knows")?;
+    {
+        let _db = lock(&state)?;
+    }
+    let key = key.trim();
+    if key.is_empty() {
+        return Err("Paste a key to test it.".into());
+    }
+    studybites_core::providers::list_models(&UreqGetHttp, id, key).map_err(|e| e.to_string())
+}
+
 /// Choose which model a provider should use.
 #[tauri::command]
 pub fn provider_model_set(state: State<AppState>, provider: String, model: String) -> Ipc<()> {
     let id = ProviderId::parse(&provider).ok_or("that is not a provider StudyBites knows")?;
+    if id == ProviderId::Managed {
+        return Err("StudyBites AI chooses its own model.".into());
+    }
     let db = lock(&state)?;
     db.set_setting(&model_key(id), model.trim()).map_err(to_ipc)
 }
@@ -746,6 +941,11 @@ pub fn provider_key_set(state: State<AppState>, provider: String, key: String) -
     let id = ProviderId::parse(&provider).ok_or("that is not a provider StudyBites knows")?;
     let db = lock(&state)?;
     keys::set_provider_key(&db, id, &key)
+}
+
+#[tauri::command]
+pub fn queue_wake(app: tauri::AppHandle) {
+    crate::worker::wake(&app);
 }
 
 #[tauri::command]

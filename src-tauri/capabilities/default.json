@@ -8,6 +8,7 @@
     "dialog:allow-open",
     "dialog:allow-save",
     "fs:allow-read-file",
-    "opener:allow-open-url"
+    "opener:allow-open-url",
+    "dnd:default"
   ]
 }

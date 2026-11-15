@@ -100,6 +100,22 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
     digest.iter().map(|b| format!("{b:02x}")).collect()
 }
 
+/// Detect the three image formats accepted for photo notes.
+pub fn image_mime(bytes: &[u8]) -> Result<&'static str> {
+    if bytes.starts_with(&[0xff, 0xd8, 0xff]) {
+        return Ok("image/jpeg");
+    }
+    if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        return Ok("image/png");
+    }
+    if bytes.len() >= 12 && bytes.starts_with(b"RIFF") && &bytes[8..12] == b"WEBP" {
+        return Ok("image/webp");
+    }
+    Err(CoreError::Invalid(
+        "each photo must be a JPEG, PNG or WebP image".into(),
+    ))
+}
+
 /// Collapse the whitespace a PDF extractor leaves behind, while keeping the
 /// blank lines that mark paragraphs — the chunker reads those.
 pub fn tidy_text(raw: &str) -> String {

@@ -1,0 +1,83 @@
+name: Deploy managed AI Worker
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "workers/ai-proxy/**"
+      - ".github/workflows/deploy-ai-worker.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: workers/ai-proxy
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: workers/ai-proxy/package-lock.json
+
+      - name: Install Worker dependencies
+        run: npm ci
+
+      - name: Test Worker
+        run: npm test
+
+      - name: Typecheck Worker
+        run: npm run typecheck
+
+      - name: Validate required Worker secrets
+        env:
+          STUDYBITES_LICENSE_PUBKEY: ${{ secrets.STUDYBITES_LICENSE_PUBKEY }}
+          STUDYBITES_AI_ADMIN_TOKEN: ${{ secrets.STUDYBITES_AI_ADMIN_TOKEN }}
+        run: |
+          if [ -z "$STUDYBITES_LICENSE_PUBKEY" ]; then
+            echo "::error::Set STUDYBITES_LICENSE_PUBKEY to the app's public license key."
+            exit 1
+          fi
+          if [ -z "$STUDYBITES_AI_ADMIN_TOKEN" ]; then
+            echo "::error::Set STUDYBITES_AI_ADMIN_TOKEN to a unique admin token."
+            exit 1
+          fi
+
+      - name: Deploy managed AI Worker
+        id: deploy
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: workers/ai-proxy
+          command: deploy
+
+      - name: Set Worker secrets
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          STUDYBITES_LICENSE_PUBKEY: ${{ secrets.STUDYBITES_LICENSE_PUBKEY }}
+          ADMIN_TOKEN: ${{ secrets.STUDYBITES_AI_ADMIN_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.STUDYBITES_AI_GEMINI_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.STUDYBITES_AI_DEEPSEEK_KEY }}
+        run: |
+          printf '%s' "$STUDYBITES_LICENSE_PUBKEY" | npx wrangler secret put STUDYBITES_LICENSE_PUBKEY
+          printf '%s' "$ADMIN_TOKEN" | npx wrangler secret put ADMIN_TOKEN
+          if [ -n "$GEMINI_API_KEY" ]; then
+            printf '%s' "$GEMINI_API_KEY" | npx wrangler secret put GEMINI_API_KEY
+          fi
+          if [ -n "$DEEPSEEK_API_KEY" ]; then
+            printf '%s' "$DEEPSEEK_API_KEY" | npx wrangler secret put DEEPSEEK_API_KEY
+          fi
+
+      - name: Write deployment summary
+        env:
+          DEPLOYMENT_URL: ${{ steps.deploy.outputs.deployment-url }}
+        run: |
+          echo "Managed AI Worker deployed: ${DEPLOYMENT_URL}" >> "$GITHUB_STEP_SUMMARY"

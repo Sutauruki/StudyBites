@@ -30,6 +30,10 @@ pub struct DistilledNote {
     pub worked_examples: Vec<String>,
     #[serde(default)]
     pub common_mistakes: Vec<String>,
+    #[serde(default)]
+    pub check_this: Vec<String>,
+    #[serde(default)]
+    pub ai_additions: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -55,6 +59,14 @@ impl DistilledNote {
             out.push('\n');
             out.push_str(formula);
         }
+        for item in &self.check_this {
+            out.push_str("\nCheck this: ");
+            out.push_str(item);
+        }
+        for item in &self.ai_additions {
+            out.push_str("\nAdded by AI: ");
+            out.push_str(item);
+        }
         out
     }
 
@@ -74,6 +86,8 @@ impl DistilledNote {
         self.formulas = tidy(self.formulas);
         self.worked_examples = tidy(self.worked_examples);
         self.common_mistakes = tidy(self.common_mistakes);
+        self.check_this = tidy(self.check_this);
+        self.ai_additions = tidy(self.ai_additions);
         self.definitions.retain(|d| !d.term.trim().is_empty());
 
         // A note with nothing in it is not worth a row, and would otherwise
@@ -85,6 +99,24 @@ impl DistilledNote {
         }
         Ok(self)
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum DistillSource {
+    #[default]
+    Document,
+    StudentNotes,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct PageTranscript {
+    pub text: String,
+    #[serde(default)]
+    pub uncertain: Vec<String>,
+    #[serde(default)]
+    pub blank: bool,
 }
 
 /// One generated card, in the three shapes the study session understands.
@@ -256,6 +288,8 @@ pub enum ProviderId {
     Gemini,
     Groq,
     OpenRouter,
+    Deepseek,
+    Managed,
 }
 
 impl ProviderId {
@@ -264,6 +298,8 @@ impl ProviderId {
             Self::Gemini => "gemini",
             Self::Groq => "groq",
             Self::OpenRouter => "openrouter",
+            Self::Deepseek => "deepseek",
+            Self::Managed => "managed",
         }
     }
 
@@ -272,21 +308,32 @@ impl ProviderId {
             "gemini" => Some(Self::Gemini),
             "groq" => Some(Self::Groq),
             "openrouter" => Some(Self::OpenRouter),
+            "deepseek" => Some(Self::Deepseek),
+            "managed" => Some(Self::Managed),
             _ => None,
         }
     }
 
-    /// Default priority: Gemini first, per the brief.
-    pub fn default_order() -> Vec<Self> {
-        vec![Self::Gemini, Self::Groq, Self::OpenRouter]
+    /// BYO-key providers, in their existing default priority order.
+    pub fn byo_order() -> Vec<Self> {
+        vec![Self::Gemini, Self::Groq, Self::OpenRouter, Self::Deepseek]
     }
 
-    /// Where the user gets a free key, shown in Settings.
+    /// All providers, with managed AI as the final fallback.
+    pub fn default_order() -> Vec<Self> {
+        let mut providers = Self::byo_order();
+        providers.push(Self::Managed);
+        providers
+    }
+
+    /// Where the user gets a key, shown in Settings.
     pub fn key_help_url(self) -> &'static str {
         match self {
             Self::Gemini => "https://aistudio.google.com/apikey",
             Self::Groq => "https://console.groq.com/keys",
             Self::OpenRouter => "https://openrouter.ai/keys",
+            Self::Deepseek => "https://platform.deepseek.com/api_keys",
+            Self::Managed => "",
         }
     }
 }
@@ -306,6 +353,8 @@ pub enum AiError {
     /// The provider no longer offers this model. Retrying cannot help; the
     /// student has to choose a different one in Settings.
     ModelUnavailable(String),
+    /// The chosen model cannot accept image input.
+    Unsupported(String),
 }
 
 impl std::fmt::Display for AiError {
@@ -319,6 +368,7 @@ impl std::fmt::Display for AiError {
             Self::Auth(m) => write!(f, "API key problem: {m}"),
             Self::BadResponse(m) => write!(f, "unusable response: {m}"),
             Self::ModelUnavailable(m) => write!(f, "{m}"),
+            Self::Unsupported(m) => write!(f, "{m}"),
         }
     }
 }
@@ -337,6 +387,7 @@ impl AiError {
                 | Self::Auth(_)
                 | Self::Transient(_)
                 | Self::ModelUnavailable(_)
+                | Self::Unsupported(_)
         )
     }
 }
@@ -349,6 +400,27 @@ pub struct DistillRequest {
     pub topic: Option<String>,
     pub heading: Option<String>,
     pub text: String,
+    #[serde(default)]
+    pub source: DistillSource,
+}
+
+/// Parse a transcription response and keep its text bounded.
+pub fn parse_transcript(raw: &str) -> Result<PageTranscript> {
+    let value = extract_json(raw)?;
+    let mut transcript: PageTranscript = serde_json::from_value(value)?;
+    transcript.text = transcript.text.trim().chars().take(20_000).collect();
+    transcript.uncertain = transcript
+        .uncertain
+        .into_iter()
+        .map(|item| item.trim().chars().take(120).collect::<String>())
+        .filter(|item| !item.is_empty())
+        .take(50)
+        .collect();
+    if transcript.text.is_empty() && !transcript.blank {
+        return Err(CoreError::Invalid("the transcript was empty".into()));
+    }
+    transcript.blank = transcript.text.is_empty();
+    Ok(transcript)
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -440,6 +512,12 @@ pub trait AiProvider {
     fn id(&self) -> ProviderId;
 
     fn distill(&self, request: &DistillRequest) -> std::result::Result<DistilledNote, AiError>;
+
+    fn transcribe_page(
+        &self,
+        image: &[u8],
+        mime: &str,
+    ) -> std::result::Result<PageTranscript, AiError>;
 
     fn generate_cards(
         &self,
