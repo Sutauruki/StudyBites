@@ -58,3 +58,30 @@ jobs:
 
       - name: Rust tests
         run: cargo test --workspace
+
+  workers:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        worker: [workers/bug-report, workers/ai-proxy]
+    defaults:
+      run:
+        working-directory: ${{ matrix.worker }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ${{ matrix.worker }}/package-lock.json
+
+      - name: Install Worker dependencies
+        run: npm ci
+
+      - name: Test Worker
+        run: npm test
+
+      - name: Typecheck Worker
+        run: npm run typecheck

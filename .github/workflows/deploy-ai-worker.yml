@@ -49,6 +49,13 @@ jobs:
             exit 1
           fi
 
+      - name: Check KV namespace is configured
+        run: |
+          if grep -q "SET_USAGE_KV_NAMESPACE_ID" wrangler.toml; then
+            echo "::error::Create a KV namespace named USAGE in Cloudflare and paste its id into workers/ai-proxy/wrangler.toml"
+            exit 1
+          fi
+
       - name: Deploy managed AI Worker
         id: deploy
         uses: cloudflare/wrangler-action@v4

@@ -503,3 +503,22 @@ This does not independently bind a request to the activation code's device
 fingerprint. Cloudflare KV increments are not atomic, and usage is recorded
 before the upstream call; the counters are best-effort limits, not billing
 records. A later web version with accounts and subscriptions remains separate.
+
+### D44. Each Worker owns its vitest config, and CI tests Workers separately
+
+Vitest searches upwards for a config, so a Worker test run started inside
+`workers/<name>` found the repository-root `vite.config.ts` and tried to load
+the React plugin. That worked only where the root `node_modules` happened to be
+installed; in the Worker deploy jobs it failed, which is why both deploys were
+red. Each Worker now has its own `vitest.config.ts` with an explicit
+`include: ["test/**/*.test.ts"]`, so the search stops there and the Worker job
+needs nothing but its own dependencies.
+
+`ci.yml` gains a `workers` matrix job over `workers/bug-report` and
+`workers/ai-proxy` that runs `npm ci`, `npm test` and `npm run typecheck`. The
+Worker tests previously ran only inside the deploy workflows, which execute on
+`main`, so a broken Worker test could be merged unnoticed.
+
+The deploy workflow also refuses to deploy while `wrangler.toml` still holds
+the `SET_USAGE_KV_NAMESPACE_ID` placeholder. It is a literal string check, not a
+validity check: it catches the forgotten step, not a wrong id.
