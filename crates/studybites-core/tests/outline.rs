@@ -48,7 +48,10 @@ fn mcq(n: usize) -> GeneratedCard {
 }
 
 fn flash(n: usize) -> GeneratedCard {
-    GeneratedCard::Flash { front: format!("front {n}"), back: format!("back {n}") }
+    GeneratedCard::Flash {
+        front: format!("front {n}"),
+        back: format!("back {n}"),
+    }
 }
 
 fn material(db: &Db, subject_id: i64, topic_id: i64) -> i64 {
@@ -91,7 +94,10 @@ fn a_rename_keeps_the_topic_id_and_its_links() {
     let cards = library::cards_create(&mut db, note_id, Some(root), &[flash(1)], false).unwrap();
 
     let decisions = OutlineDecisions {
-        renamed: vec![RenameDecision { id: root, title: "Set theory".into() }],
+        renamed: vec![RenameDecision {
+            id: root,
+            title: "Set theory".into(),
+        }],
         ..Default::default()
     };
     outline::apply_outline_update(&mut db, subject_id, &decisions).unwrap();
@@ -101,9 +107,18 @@ fn a_rename_keeps_the_topic_id_and_its_links() {
     assert_eq!(tree[0].id, root, "the topic keeps its id");
     assert_eq!(tree[0].title, "Set theory");
 
-    assert_eq!(library::material_get(&db, file).unwrap().topic_id, Some(root));
-    assert_eq!(library::note_get(&db, note_id).unwrap().topic_id, Some(root));
-    assert_eq!(library::card_get(&db, cards[0]).unwrap().topic_id, Some(root));
+    assert_eq!(
+        library::material_get(&db, file).unwrap().topic_id,
+        Some(root)
+    );
+    assert_eq!(
+        library::note_get(&db, note_id).unwrap().topic_id,
+        Some(root)
+    );
+    assert_eq!(
+        library::card_get(&db, cards[0]).unwrap().topic_id,
+        Some(root)
+    );
 }
 
 #[test]
@@ -118,7 +133,10 @@ fn a_removed_topic_is_archived_and_its_cards_are_only_hidden() {
     assert_eq!(study::due_counts(&db, Some(subject_id)).unwrap().new, 3);
     assert_eq!(cbt::available(&db, &[subject_id]).unwrap(), 3);
 
-    let decisions = OutlineDecisions { archived: vec![root], ..Default::default() };
+    let decisions = OutlineDecisions {
+        archived: vec![root],
+        ..Default::default()
+    };
     outline::apply_outline_update(&mut db, subject_id, &decisions).unwrap();
 
     assert!(topics::list_tree(&db, subject_id).unwrap().is_empty());
@@ -132,7 +150,10 @@ fn a_removed_topic_is_archived_and_its_cards_are_only_hidden() {
     assert!(session.cards.is_empty(), "archived cards are not selected");
     assert_eq!(cbt::available(&db, &[subject_id]).unwrap(), 0);
     for id in &ids {
-        assert!(library::card_get(&db, *id).is_ok(), "the card row is untouched");
+        assert!(
+            library::card_get(&db, *id).is_ok(),
+            "the card row is untouched"
+        );
     }
 
     topics::restore(&db, root).unwrap();
@@ -149,7 +170,10 @@ fn reimporting_the_same_scheme_does_not_duplicate_anything() {
 
     let incoming = [entry("Sets"), entry("Logarithms")];
     let diff = outline::diff_outline(&db, subject_id, &incoming).unwrap();
-    assert!(diff.is_empty(), "nothing changed, so there is nothing to apply");
+    assert!(
+        diff.is_empty(),
+        "nothing changed, so there is nothing to apply"
+    );
     outline::apply_outline_update(&mut db, subject_id, &OutlineDecisions::default()).unwrap();
 
     let all = topics::list_all(&db, subject_id).unwrap();

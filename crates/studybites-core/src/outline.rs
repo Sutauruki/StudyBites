@@ -429,7 +429,11 @@ pub fn diff_outline(db: &Db, subject_id: i64, incoming: &[SchemeEntry]) -> Resul
         }
 
         if !parent_archived {
-            pending_children.extend(children.into_iter().filter(|child| !used.contains(&child.id)));
+            pending_children.extend(
+                children
+                    .into_iter()
+                    .filter(|child| !used.contains(&child.id)),
+            );
         }
     }
 
@@ -756,8 +760,8 @@ pub fn apply_outline_update(
 
     for decision in &decisions.moved {
         ensure_subject(&tx, decision.id, subject_id)?;
-        let (current_parent, current_week, current_position): (Option<i64>, Option<i64>, i64) =
-            tx.query_row(
+        let (current_parent, current_week, current_position): (Option<i64>, Option<i64>, i64) = tx
+            .query_row(
                 "SELECT parent_id, week, position FROM scheme_topics WHERE id = ?1",
                 [decision.id],
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
@@ -826,7 +830,13 @@ pub fn apply_outline_update(
     tx.execute(
         "INSERT INTO outline_updates(subject_id, added, removed, renamed, moved)
          VALUES (?1, ?2, ?3, ?4, ?5)",
-        (subject_id, added, decisions.archived.len() as i64, renamed, moved),
+        (
+            subject_id,
+            added,
+            decisions.archived.len() as i64,
+            renamed,
+            moved,
+        ),
     )?;
     tx.commit()?;
 
@@ -993,7 +1003,10 @@ mod tests {
         assert_eq!(diff.added.len(), 1);
         assert_eq!(diff.added[0].title, "Logarithms");
         assert_eq!(diff.added[0].week, Some(3));
-        assert_eq!(diff.added[0].subtopics, vec!["Laws of logs", "Change of base"]);
+        assert_eq!(
+            diff.added[0].subtopics,
+            vec!["Laws of logs", "Change of base"]
+        );
         assert!(diff.removed.is_empty());
     }
 
@@ -1006,7 +1019,11 @@ mod tests {
         topic(&db, subject_id, "Sine rule", None, Some(dropped));
 
         let diff = diff_outline(&db, subject_id, &[entry("Sets", None, &[])]).unwrap();
-        assert_eq!(diff.removed.len(), 1, "the child is archived with its parent");
+        assert_eq!(
+            diff.removed.len(),
+            1,
+            "the child is archived with its parent"
+        );
         assert_eq!(diff.removed[0].id, dropped);
         assert_eq!(diff.removed[0].title, "Trigonometry");
         let archived = topics::get(&db, dropped).unwrap();
@@ -1027,7 +1044,10 @@ mod tests {
         let diff = diff_outline(&db, subject_id, &[entry("Sets", None, &[])]).unwrap();
         assert_eq!(diff.restored.len(), 1);
         assert_eq!(diff.restored[0].id, id);
-        assert!(diff.added.is_empty(), "restoring must not create a second copy");
+        assert!(
+            diff.added.is_empty(),
+            "restoring must not create a second copy"
+        );
     }
 
     #[test]
@@ -1088,7 +1108,10 @@ mod tests {
         topic(&db, subject_id, "Sets", None, None);
 
         let diff = diff_outline(&db, subject_id, &[]).unwrap();
-        assert!(diff.is_empty(), "an empty import is not a request to archive");
+        assert!(
+            diff.is_empty(),
+            "an empty import is not a request to archive"
+        );
         assert_eq!(diff.removed.len(), 0);
     }
 
@@ -1123,7 +1146,10 @@ mod tests {
                 parent_id: None,
                 subtopics: vec!["Addition".into()],
             }],
-            renamed: vec![RenameDecision { id: sets, title: "Sets and relations".into() }],
+            renamed: vec![RenameDecision {
+                id: sets,
+                title: "Sets and relations".into(),
+            }],
             moved: vec![],
             archived: vec![old],
             restored: vec![],
@@ -1157,7 +1183,10 @@ mod tests {
         // The first rename is valid; the move names a topic that is not there.
         // Nothing may survive the failure.
         let decisions = OutlineDecisions {
-            renamed: vec![RenameDecision { id: sets, title: "Renamed".into() }],
+            renamed: vec![RenameDecision {
+                id: sets,
+                title: "Renamed".into(),
+            }],
             moved: vec![MoveDecision {
                 id: 99_999,
                 week: Some(2),
@@ -1186,7 +1215,10 @@ mod tests {
                 parent_id: None,
                 subtopics: vec![],
             }],
-            paired: vec![PairedDecision { removed_id: old, added: 0 }],
+            paired: vec![PairedDecision {
+                removed_id: old,
+                added: 0,
+            }],
             ..Default::default()
         };
         let tree = apply_outline_update(&mut db, subject_id, &decisions).unwrap();

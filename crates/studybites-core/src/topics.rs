@@ -214,10 +214,7 @@ pub fn set_coverage(db: &Db, id: i64, coverage: &str) -> Result<Topic> {
         (id, coverage),
     )?;
     if changed == 0 {
-        return Err(CoreError::NotFound {
-            kind: "topic",
-            id,
-        });
+        return Err(CoreError::NotFound { kind: "topic", id });
     }
     get(db, id)
 }
