@@ -163,6 +163,8 @@ pub struct Renamed {
 #[serde(rename_all = "camelCase")]
 pub struct Moved {
     pub id: i64,
+    /// The topic's title before the move, for the Changes screen.
+    pub title: String,
     pub from_week: Option<i64>,
     pub to_week: Option<i64>,
     pub from_parent: Option<i64>,
@@ -179,6 +181,9 @@ pub struct AddedTopic {
     pub title: String,
     pub week: Option<i64>,
     pub parent_id: Option<i64>,
+    /// The parent's title, so the screen can say where the subtopic goes.
+    #[serde(default)]
+    pub parent_title: Option<String>,
     #[serde(default)]
     pub subtopics: Vec<String>,
 }
@@ -220,7 +225,7 @@ fn subtopic_overlap(entry: &SchemeEntry, topic: &Topic, existing: &[Topic]) -> u
     let wanted: HashSet<String> = entry
         .subtopics
         .iter()
-        .map(|sub| normalize(sub))
+        .map(|sub| normalize(sub.as_str()))
         .filter(|key| !key.is_empty())
         .collect();
     existing
@@ -353,6 +358,7 @@ pub fn diff_outline(db: &Db, subject_id: i64, incoming: &[SchemeEntry]) -> Resul
         } else if entry.week != parent.week {
             diff.moved.push(Moved {
                 id: parent.id,
+                title: parent.title.clone(),
                 from_week: parent.week,
                 to_week: entry.week,
                 from_parent: None,
@@ -450,6 +456,7 @@ pub fn diff_outline(db: &Db, subject_id: i64, incoming: &[SchemeEntry]) -> Resul
                 pending_children.retain(|candidate| candidate.id != child.id);
                 diff.moved.push(Moved {
                     id: child.id,
+                    title: child.title.clone(),
                     from_week: child.week,
                     to_week: child.week,
                     from_parent: child.parent_id,
@@ -471,6 +478,10 @@ pub fn diff_outline(db: &Db, subject_id: i64, incoming: &[SchemeEntry]) -> Resul
                 title: pending.title.clone(),
                 week: None,
                 parent_id: Some(parent_id),
+                parent_title: existing
+                    .iter()
+                    .find(|topic| topic.id == parent_id)
+                    .map(|topic| topic.title.clone()),
                 subtopics: Vec::new(),
             });
         }
@@ -488,6 +499,7 @@ pub fn diff_outline(db: &Db, subject_id: i64, incoming: &[SchemeEntry]) -> Resul
             title: entry.title.trim().to_string(),
             week: entry.week,
             parent_id: None,
+            parent_title: None,
             subtopics,
         });
     }
@@ -728,7 +740,7 @@ pub fn apply_outline_update(
         let title = clean_name(title, "Topic title", MAX_TITLE)?;
         tx.execute(
             "UPDATE scheme_topics SET title = ?2 WHERE id = ?1",
-            (id, &title),
+            (*id, &title),
         )?;
         renamed += 1;
     }
