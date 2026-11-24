@@ -15,7 +15,10 @@ Status markers: [ ] not started, [~] in progress, [x] complete.
 11. [~] Mobile layout pass and Android build check
 12. [ ] Automated licensing, free trials, coupons and referral codes, card packs by link (open only inside the app, no download page)
 13. [~] Managed AI Worker and app fallback/status (deployment and live verification pending)
-14. [ ] Group streaks and streak partners (a member's missed day affects the group streak; streak freeze; optional anonymous scores)
-15. [ ] Shared scheme-of-work library (with reuse of parsed outlines and update history), then shared notes library (derived notes and cards only, never original files; 5,000 naira plans and up), then comment threads
-16. [ ] Nibble lecture recording (last)
-17. [ ] Web version with accounts, subscriptions and web-specific licensing
+14. [ ] Accounts and usernames: unique @username chosen once; find people by exact username or invite link/QR only, no public search; block and remove
+15. [ ] Project groups: members by username or invite link, deadline, task checklist with owners, shared links and notes, AI splits an uploaded project brief into tasks and a timeline, comments per task, no real-time chat
+16. [ ] Study rooms: shared timer showing who is studying
+17. [ ] Group streaks and streak partners (a member's missed day affects the group streak; streak freeze; optional anonymous scores)
+18. [ ] Shared scheme-of-work library (with reuse of parsed outlines and update history), then shared notes library (derived notes and cards only, never original files; 5,000 naira plans and up), then comment threads
+19. [ ] Nibble lecture recording (last)
+20. [ ] Web version with accounts, subscriptions and web-specific licensing
