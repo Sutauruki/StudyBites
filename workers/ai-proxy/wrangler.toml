@@ -5,4 +5,4 @@ workers_dev = true
 
 [[kv_namespaces]]
 binding = "USAGE"
-id = "SET_USAGE_KV_NAMESPACE_ID"
+id = "PASTE_KV_ID_HERE"
