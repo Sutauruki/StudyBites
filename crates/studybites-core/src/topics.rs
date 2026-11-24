@@ -8,6 +8,9 @@ use rusqlite::Row;
 
 const MAX_TITLE: usize = 200;
 
+/// The values `set_coverage` accepts. Kept next to the migration's CHECK.
+pub const COVERAGES: [&str; 3] = ["unknown", "taught", "self"];
+
 fn row_to_topic(row: &Row) -> rusqlite::Result<Topic> {
     Ok(Topic {
         id: row.get("id")?,
@@ -19,16 +22,45 @@ fn row_to_topic(row: &Row) -> rusqlite::Result<Topic> {
         is_off_scheme: row.get::<_, i64>("is_off_scheme")? != 0,
         supports_topic_id: row.get("supports_topic_id")?,
         is_preview: row.get::<_, i64>("is_preview")? != 0,
+        archived_at: row.get("archived_at")?,
+        coverage: row.get("coverage")?,
         children: Vec::new(),
     })
 }
 
-/// Every topic of a subject as a flat list, ordered by parent then position.
+/// Every topic of a subject that is not archived, ordered by parent then
+/// position.
 pub fn list_flat(db: &Db, subject_id: i64) -> Result<Vec<Topic>> {
+    let mut stmt = db.conn().prepare(
+        "SELECT * FROM scheme_topics
+          WHERE subject_id = ?1 AND archived_at IS NULL
+          ORDER BY (parent_id IS NOT NULL), parent_id, position, id",
+    )?;
+    let rows = stmt.query_map([subject_id], row_to_topic)?;
+    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+}
+
+/// Every topic of a subject, archived ones included.
+///
+/// Used by the outline diff: a topic archived by an earlier update must be
+/// matchable again, so that re-importing a scheme restores it rather than
+/// creating a second copy.
+pub fn list_all(db: &Db, subject_id: i64) -> Result<Vec<Topic>> {
     let mut stmt = db.conn().prepare(
         "SELECT * FROM scheme_topics
           WHERE subject_id = ?1
           ORDER BY (parent_id IS NOT NULL), parent_id, position, id",
+    )?;
+    let rows = stmt.query_map([subject_id], row_to_topic)?;
+    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+}
+
+/// The archived topics of a subject, oldest first.
+pub fn list_archived(db: &Db, subject_id: i64) -> Result<Vec<Topic>> {
+    let mut stmt = db.conn().prepare(
+        "SELECT * FROM scheme_topics
+          WHERE subject_id = ?1 AND archived_at IS NOT NULL
+          ORDER BY archived_at, parent_id IS NOT NULL, parent_id, position, id",
     )?;
     let rows = stmt.query_map([subject_id], row_to_topic)?;
     Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
@@ -143,6 +175,51 @@ pub fn delete(db: &Db, id: i64) -> Result<()> {
         .execute("DELETE FROM scheme_topics WHERE id = ?1", [id])?;
     compact_positions(db, topic.subject_id, topic.parent_id)?;
     Ok(())
+}
+
+/// Hide a topic and its subtopics. Nothing is deleted: materials, notes and
+/// cards keep pointing at the same topic id, they just stop appearing while it
+/// is archived.
+pub fn archive(db: &Db, id: i64) -> Result<Topic> {
+    let topic = get(db, id)?;
+    db.conn().execute(
+        "UPDATE scheme_topics
+            SET archived_at = COALESCE(archived_at, strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+          WHERE id = ?1 OR parent_id = ?1",
+        [id],
+    )?;
+    get(db, topic.id)
+}
+
+/// Bring an archived topic and its subtopics back.
+pub fn restore(db: &Db, id: i64) -> Result<Topic> {
+    let topic = get(db, id)?;
+    db.conn().execute(
+        "UPDATE scheme_topics SET archived_at = NULL
+          WHERE id = ?1 OR parent_id = ?1",
+        [id],
+    )?;
+    get(db, topic.id)
+}
+
+/// Record whether the student met this topic in class or studied it alone.
+pub fn set_coverage(db: &Db, id: i64, coverage: &str) -> Result<Topic> {
+    if !COVERAGES.contains(&coverage) {
+        return Err(CoreError::Invalid(format!(
+            "Coverage must be unknown, taught or self, not \"{coverage}\""
+        )));
+    }
+    let changed = db.conn().execute(
+        "UPDATE scheme_topics SET coverage = ?2 WHERE id = ?1",
+        (id, coverage),
+    )?;
+    if changed == 0 {
+        return Err(CoreError::NotFound {
+            kind: "topic",
+            id,
+        });
+    }
+    get(db, id)
 }
 
 /// Rewrite the order of one sibling group. `ordered_ids` must be exactly the
