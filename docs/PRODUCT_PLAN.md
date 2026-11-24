@@ -59,6 +59,23 @@ by a shared notes library derived from notes and cards only, never original
 files, with 5,000 naira plans and up, then comment threads. There is no
 real-time chat.
 
+## Accounts, groups and study rooms
+
+Accounts and usernames belong to the web version. A username is chosen once and
+is unique; people find each other by exact username or by invite link or QR
+only. There is no public search, and blocking and removing exist from the start.
+
+Project groups need those accounts and the cloud: members join by username or
+invite link, set a deadline, keep a task checklist with owners, share links and
+notes, and comment per task. Uploading a project brief lets the AI split it into
+tasks and a timeline. Study rooms show a shared timer and who is studying. None
+of it uses real-time chat.
+
+The offline core stays offline: the desktop and Android apps keep studying,
+cards and progress on the device with no account required. Groups, rooms and
+accounts are added features the app can reach when online, not conditions for
+using it.
+
 ## Other confirmed decisions
 
 - Do Not Disturb is Android-only, opt-in, priority-only by default, and always restored afterwards. iOS, Windows, and web do not support it.
