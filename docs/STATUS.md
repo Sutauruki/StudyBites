@@ -259,3 +259,56 @@ Branch and last commit: chore/stabilise-workers-ci, this commit | CI: to be conf
  - Suggested next step: merge the PR once CI is green, then complete the Cloudflare KV setup for Task H.
 READY FOR NEXT: yes
 === END REPORT ===
+
+=== STUDYBITES HANDOFF REPORT ===
+Task: Outline updates (roadmap item 5) | Status: done, device checks pending
+Branch and last commit: feature/outline-updates, this commit | CI: to be confirmed on the PR
+1. What I did (one line per change):
+ - docs/ROADMAP.md (edited): item 13 is now "Web version and managed AI"; accounts, project groups and study rooms follow as 14-16; group streaks and the libraries move to 17-18 and Nibble stays last at 19. Item 5 is [~].
+ - docs/PRODUCT_PLAN.md (edited): new "Accounts, groups and study rooms" section.
+ - crates/studybites-core/src/migrations.rs (edited): migration 008 adds scheme_topics.archived_at, scheme_topics.coverage and the outline_updates table.
+ - crates/studybites-core/src/models.rs (edited): Topic carries archivedAt and coverage with serde defaults.
+ - crates/studybites-core/src/topics.rs (edited): archived topics are hidden from list_flat/list_tree; adds list_all, list_archived, archive, restore and set_coverage.
+ - crates/studybites-core/src/outline.rs (new): normalize, diff_outline, apply_outline_update, history, plus unit tests.
+ - crates/studybites-core/src/study.rs, cbt.rs, preview.rs, subjects.rs (edited): archived topics' cards are excluded from sessions, resumes, due counts, CBT tests, previews and progress counts.
+ - crates/studybites-core/src/lib.rs (edited): registers the outline module.
+ - crates/studybites-core/tests/outline.rs (new): a rename keeps the id and links; an archived topic's cards are hidden then restored; re-importing does not duplicate.
+ - crates/studybites-core/tests/storage.rs (edited): the migration test covers the new columns and table; table count is 18.
+ - src-tauri/src/commands.rs, phase2.rs, lib.rs (edited): topic_archive, topic_restore, topics_archived, topic_set_coverage, outline_diff, outline_apply, outline_history.
+ - src/api/types.ts, tauri.ts (edited): new types and commands.
+ - src/api/mockOutline.ts (new): the same normalisation and matching in the browser mock.
+ - src/api/mock.ts (edited): archive/restore/coverage, diff/apply/history, and archived rows hidden from sessions, CBT and progress.
+ - src/routes/SchemeImportDialog.tsx (replaced): Changes stage with Added/Renamed/Moved/Removed/Restored, "Same as...", pinned "Apply update" footer and the summary line.
+ - src/routes/SubjectPage.tsx (edited): per-topic menu (Taught/Self/Not set/Archive), badges, Archived topics section with Restore and guarded delete, "Outline last updated" with a short history.
+ - src/styles/app.css (edited): styles for the menu, the archived list and the Changes screen.
+ - README.md (edited): "When the outline changes".
+ - docs/DECISIONS.md (edited): D45-D48.
+2. Checks I ran (command and result):
+ - npm run typecheck: PASSED
+ - npm run build:web: PASSED
+ - Rust fmt, check, clippy and tests: NOT RUN (no Rust toolchain here); CI runs them on the PR.
+3. Not verified:
+ - The seven device checks in section 6, on a real device.
+ - Rust compilation, formatting and clippy until CI reports.
+4. Where I changed or went beyond the prompt, and why:
+ - Roadmap item 13 was "Managed AI Worker" and the web version was item 17. The prompt calls item 13 "web version and managed AI" and asks for Nibble last, so the two were merged into item 13; otherwise the web version would still come after Nibble.
+ - Part B was not done; see section 5.
+ - The import dialog's onSaved now takes a message instead of a count (internal prop only).
+5. Problems, risks and anything I guessed:
+ - PART B, workers/ai-proxy/wrangler.toml: it holds id = "PASTE_KV_ID_HERE", still the literal placeholder, so per the instruction I stopped and did not guess a KV namespace id. (On main the file still says SET_USAGE_KV_NAMESPACE_ID; the rename lives only on the older wip branch.)
+ - Applying an empty decision set still writes an outline_updates row; the dialog disables Apply when nothing is selected.
+ - A large rename (such as "Sets" to "Set theory") is deliberately not matched automatically; the "Same as..." pairing is the route.
+6. What the developer must do or test now (device checklist, verified or not verified):
+ 1 import an outline into a new subject, same as before: NOT VERIFIED
+ 2 import a changed outline into a subject that has topics and see the Changes screen: NOT VERIFIED
+ 3 apply it: progress and cards kept, the removed topic archived: NOT VERIFIED
+ 4 the archived topic's cards no longer appear in a session: NOT VERIFIED
+ 5 restore it: NOT VERIFIED
+ 6 mark a topic Taught in class and Self-studied and see the badge: NOT VERIFIED
+ 7 no duplicate topics appear anywhere: NOT VERIFIED
+7. What is left:
+ - Remaining parts of this task: the seven device checks, and PART B needs the real KV namespace id.
+ - Roadmap status: items 1, 2, 3, 4, 5, 11, 13 [~]; items 6-10, 12, 14-19 [ ].
+ - Suggested next step: run the device checklist, then merge once CI is green.
+READY FOR NEXT: yes
+=== END REPORT ===
