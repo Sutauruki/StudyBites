@@ -1,82 +1,28 @@
 === STUDYBITES HANDOFF REPORT ===
-Task: Codespace disk cleanup | Status: done
-Branch and last commit: ccr-cd109432-nnvymz e888584 | CI: not run
+Task: C — Android app-state recovery | Status: done
+Branch and last commit: ccr-cd109432-nnvymz 2ce8193 | CI: not run
 1. What I did (one line per change):
- - target/ (ignored generated output, removed): Cargo build artifacts removed; cargo clean deleted the full 18.3 GB target tree.
- - src-tauri/gen/android/{app/build,build,buildSrc/build,.gradle} (ignored generated output, removed): removed Android Gradle outputs and caches; preserved generated project sources and signing properties.
- - dist/ (ignored generated output, removed): removed the 348 KB frontend bundle.
- - docs/STATUS.md (replaced): recorded cleanup details and remaining build implications.
+ - crates/studybites-core/tests/storage.rs (edited): added an upgrade test applying the resumable-session migration to a populated pre-existing database.
+ - src/App.tsx (edited): clear the in-memory resume snapshot when a study session finishes; this pre-existing workspace edit was included with Task C.
+ - Existing Task C commits already contain the session_cards migration, Rust resume/stale-session logic, command and mock support, versioned local snapshot, README, D38, and roadmap update.
 2. Checks I ran (command and result):
- - Disk usage inspection (`du`, `df`): PASSED; about 18.3 GB recovered and 20 GB available.
- - Git status: PASSED; only the pre-existing `src/App.tsx` modification remains tracked.
- - Failures: none.
+ - cargo test -p studybites-core: PASSED (all suites; 100 tests)
+ - npm run typecheck: PASSED
+ - npm run build:web: PASSED
+ - git diff --check: PASSED
+ - Failures: none
 3. Not verified:
- - Rust Analyzer/build behavior after Cargo artifacts are regenerated.
+ - Android device checklist: background to WhatsApp, process swipe-away/reopen, and Developer options "Don't keep activities".
 4. Where I changed or went beyond the prompt, and why:
- - Removed ignored Android Gradle caches and the small `dist/` output as disposable generated files.
+ - Added an explicit populated-database migration test to cover the stated upgrade scenario.
 5. Problems, risks and anything I guessed:
- - Cargo cleanup removed the complete `target/` directory, including Rust Analyzer's cached build artifacts; later Rust checks will rebuild them.
+ - No frontend test runner is configured; Rust integration, typecheck, and production build checks passed.
 6. What the developer must do or test now (device checklist, secrets, settings):
- - No immediate action. The next Rust analysis/build may take longer while artifacts are recreated.
+ - Verify on Android: start a 10-minute session and grade two cards; switch to WhatsApp and return; swipe away and reopen; repeat with "Don't keep activities". Confirm the same screen/card and timer are restored.
 7. What is left:
- - Remaining parts of this task: none
- - Roadmap status: item 1 [~], item 11 [~]; all other items [ ]
- - Suggested next step: continue the pending task; avoid rebuilding until needed.
-READY FOR NEXT: yes
-=== END REPORT ===
-
-=== STUDYBITES HANDOFF REPORT ===
-Task: F — Bug report pipeline | Status: partly done
-Branch and last commit: ccr-cd109432-nnvymz 4d1c08c | CI: not run
-1. What I did (one line per change):
- - Edited: .github/workflows/build-mobile.yml, .github/workflows/build-windows.yml, README.md, crates/studybites-core/src/lib.rs, crates/studybites-core/src/migrations.rs, crates/studybites-core/src/providers.rs, crates/studybites-core/tests/storage.rs, docs/DECISIONS.md, docs/PRODUCT_PLAN.md, docs/ROADMAP.md, src-tauri/src/lib.rs, src-tauri/src/phase2.rs, src-tauri/src/state.rs, src/App.tsx, src/api/index.ts, src/api/mock.ts, src/api/tauri.ts, src/api/types.ts, src/routes/SettingsPage.tsx, src/styles/app.css: wired opt-in reports, minimized diagnostics, encrypted outbox, and compile-time endpoint configuration.
- - New: .github/workflows/deploy-bug-worker.yml, crates/studybites-core/src/bugreport.rs, src/components/ReportBugDialog.tsx, src/lib/diag.ts, workers/bug-report/README.md, workers/bug-report/package-lock.json, workers/bug-report/package.json, workers/bug-report/src/index.ts, workers/bug-report/test/index.test.ts, workers/bug-report/tsconfig.json, workers/bug-report/wrangler.toml: added validation, redaction, email delivery, rate limits, tests and deployment instructions.
-2. Checks I ran (command and result):
- - cargo fmt --all --check; cargo test -p studybites-core; cargo check --workspace --all-targets; cargo clippy --workspace --all-targets -- -D warnings: PASSED.
- - npm run build:web: PASSED.
- - cd workers/bug-report && npm test && npm run typecheck: PASSED (9 tests).
- - git diff --check: PASSED.
- - npm test from repository root: FAILED because no root test script exists; the Worker test command above passed from its directory.
- - Failures: `npm error Missing script: "test"` (wrong working directory; no code test failures).
-3. Not verified:
- - Worker deployment/live Resend delivery; Settings UI, screenshot picker, clipboard, and offline queue on Windows or Android devices.
-4. Where I changed or went beyond the prompt, and why:
- - D41 records opt-in reporting and diagnostic data minimization; generic error categories prevent raw error text from being uploaded.
-5. Problems, risks and anything I guessed:
- - `onboarding@resend.dev` is test-only. Cloudflare KV rate counters are eventually consistent; concurrent requests can race.
-6. What the developer must do or test now (device checklist, secrets, settings):
- - Configure the Worker secrets and `STUDYBITES_BUG_REPORT_URL` repository variable per workers/bug-report/README.md; deploy and verify delivery. Replace the test sender before public launch. On Windows and Android, test send, three resized screenshots, copy fallback, offline queue/retry, and privacy disclosure.
-7. What is left:
- - Remaining parts of this task: Worker deployment and device verification.
- - Roadmap status: items 1, 2, 3, 4, 11 [~]; items 5-10, 12-16 [ ].
- - Suggested next step: deploy the Worker with owner-managed secrets, then continue Task G.
-READY FOR NEXT: yes
-=== END REPORT ===
-
-=== STUDYBITES HANDOFF REPORT ===
-Task: E — Android Do Not Disturb | Status: partly done
-Branch and last commit: ccr-cd109432-nnvymz 272d441 | CI: not run
-1. What I did (one line per change):
- - Edited: Cargo.lock, Cargo.toml, README.md, docs/DECISIONS.md (D40), docs/ROADMAP.md, src-tauri/Cargo.toml, src-tauri/capabilities/default.json, src-tauri/src/lib.rs, src/App.tsx, src/api/mock.ts, src/api/tauri.ts, src/api/types.ts, src/routes/SettingsPage.tsx, src/routes/StudyPage.tsx: integrated Android-only DND, Settings controls, session lifecycle restoration, startup recovery, and documentation.
- - New: src-tauri/plugins/tauri-plugin-dnd/.gitignore, src-tauri/plugins/tauri-plugin-dnd/Cargo.toml, src-tauri/plugins/tauri-plugin-dnd/README.md, src-tauri/plugins/tauri-plugin-dnd/build.rs, src-tauri/plugins/tauri-plugin-dnd/android/.gitignore, src-tauri/plugins/tauri-plugin-dnd/android/build.gradle.kts, src-tauri/plugins/tauri-plugin-dnd/android/consumer-rules.pro, src-tauri/plugins/tauri-plugin-dnd/android/settings.gradle, src-tauri/plugins/tauri-plugin-dnd/android/src/main/AndroidManifest.xml, src-tauri/plugins/tauri-plugin-dnd/android/src/main/java/com/sutauruki/studybites/dnd/DndPlugin.kt, src-tauri/plugins/tauri-plugin-dnd/android/src/main/java/com/sutauruki/studybites/dnd/DndRestoreReceiver.kt, src-tauri/plugins/tauri-plugin-dnd/permissions/autogenerated/commands/dnd_enable.toml, src-tauri/plugins/tauri-plugin-dnd/permissions/autogenerated/commands/dnd_request_access.toml, src-tauri/plugins/tauri-plugin-dnd/permissions/autogenerated/commands/dnd_restore.toml, src-tauri/plugins/tauri-plugin-dnd/permissions/autogenerated/commands/dnd_status.toml, src-tauri/plugins/tauri-plugin-dnd/permissions/autogenerated/reference.md, src-tauri/plugins/tauri-plugin-dnd/permissions/default.toml, src-tauri/plugins/tauri-plugin-dnd/permissions/schemas/schema.json, src-tauri/plugins/tauri-plugin-dnd/src/commands.rs, src-tauri/plugins/tauri-plugin-dnd/src/desktop.rs, src-tauri/plugins/tauri-plugin-dnd/src/error.rs, src-tauri/plugins/tauri-plugin-dnd/src/lib.rs, src-tauri/plugins/tauri-plugin-dnd/src/logic.rs, src-tauri/plugins/tauri-plugin-dnd/src/mobile.rs, src-tauri/plugins/tauri-plugin-dnd/src/models.rs: created the local Tauri plugin, Android implementation, desktop stub, and permissions.
-2. Checks I ran (command and result):
- - cargo fmt --all --check; cargo test -p tauri-plugin-dnd; cargo test -p studybites-core; cargo check --workspace --all-targets; cargo clippy --workspace --all-targets -- -D warnings: PASSED.
- - cargo check -p tauri-plugin-dnd --target aarch64-linux-android: PASSED.
- - npm run typecheck; npm run build:web; git diff --check: PASSED.
- - ./gradlew :tauri-plugin-dnd:compileDebugKotlin --no-daemon: NOT RUN; no Gradle wrapper or system Gradle is installed.
- - Failures: none in the final checks.
-3. Not verified:
- - Kotlin/Gradle compilation and Android device behavior.
-4. Where I changed or went beyond the prompt, and why:
- - D40 records Android-only scope, priority default, conservative restore, and crash recovery.
-5. Problems, risks and anything I guessed:
- - Full Tauri/Android build was not run per working rules; Android plugin Gradle integration appears in generated settings but Kotlin remains uncompiled here.
-6. What the developer must do or test now (device checklist, secrets, settings):
- - On Android: grant DND access; enable the setting and start/end a study; kill the app mid-session and verify restore by planned end +2 minutes; manually change DND and verify StudyBites preserves that choice; test OEM settings behavior.
-7. What is left:
- - Remaining parts of this task: Android DND device and Kotlin/Gradle verification.
- - Roadmap status: items 1, 2, 3, 11 [~]; items 4-10, 12-16 [ ].
- - Suggested next step: continue to Task F; return to the device checklist before marking item 3 complete.
+ - Remaining parts of this task: Android device verification
+ - Roadmap status: item 1 [~], item 11 [~]; all other items 2-10 and 12-16 are [ ]
+ - Suggested next step: continue to Task D; retain the device checklist for validation.
 READY FOR NEXT: yes
 === END REPORT ===
 
@@ -113,30 +59,57 @@ READY FOR NEXT: yes
 === END REPORT ===
 
 === STUDYBITES HANDOFF REPORT ===
-Task: C — Android app-state recovery | Status: done
-Branch and last commit: ccr-cd109432-nnvymz 2ce8193 | CI: not run
+Task: E — Android Do Not Disturb | Status: partly done
+Branch and last commit: ccr-cd109432-nnvymz 272d441 | CI: not run
 1. What I did (one line per change):
- - crates/studybites-core/tests/storage.rs (edited): added an upgrade test applying the resumable-session migration to a populated pre-existing database.
- - src/App.tsx (edited): clear the in-memory resume snapshot when a study session finishes; this pre-existing workspace edit was included with Task C.
- - Existing Task C commits already contain the session_cards migration, Rust resume/stale-session logic, command and mock support, versioned local snapshot, README, D38, and roadmap update.
+ - Edited: Cargo.lock, Cargo.toml, README.md, docs/DECISIONS.md (D40), docs/ROADMAP.md, src-tauri/Cargo.toml, src-tauri/capabilities/default.json, src-tauri/src/lib.rs, src/App.tsx, src/api/mock.ts, src/api/tauri.ts, src/api/types.ts, src/routes/SettingsPage.tsx, src/routes/StudyPage.tsx: integrated Android-only DND, Settings controls, session lifecycle restoration, startup recovery, and documentation.
+ - New: src-tauri/plugins/tauri-plugin-dnd/.gitignore, src-tauri/plugins/tauri-plugin-dnd/Cargo.toml, src-tauri/plugins/tauri-plugin-dnd/README.md, src-tauri/plugins/tauri-plugin-dnd/build.rs, src-tauri/plugins/tauri-plugin-dnd/android/.gitignore, src-tauri/plugins/tauri-plugin-dnd/android/build.gradle.kts, src-tauri/plugins/tauri-plugin-dnd/android/consumer-rules.pro, src-tauri/plugins/tauri-plugin-dnd/android/settings.gradle, src-tauri/plugins/tauri-plugin-dnd/android/src/main/AndroidManifest.xml, src-tauri/plugins/tauri-plugin-dnd/android/src/main/java/com/sutauruki/studybites/dnd/DndPlugin.kt, src-tauri/plugins/tauri-plugin-dnd/android/src/main/java/com/sutauruki/studybites/dnd/DndRestoreReceiver.kt, src-tauri/plugins/tauri-plugin-dnd/permissions/autogenerated/commands/dnd_enable.toml, src-tauri/plugins/tauri-plugin-dnd/permissions/autogenerated/commands/dnd_request_access.toml, src-tauri/plugins/tauri-plugin-dnd/permissions/autogenerated/commands/dnd_restore.toml, src-tauri/plugins/tauri-plugin-dnd/permissions/autogenerated/commands/dnd_status.toml, src-tauri/plugins/tauri-plugin-dnd/permissions/autogenerated/reference.md, src-tauri/plugins/tauri-plugin-dnd/permissions/default.toml, src-tauri/plugins/tauri-plugin-dnd/permissions/schemas/schema.json, src-tauri/plugins/tauri-plugin-dnd/src/commands.rs, src-tauri/plugins/tauri-plugin-dnd/src/desktop.rs, src-tauri/plugins/tauri-plugin-dnd/src/error.rs, src-tauri/plugins/tauri-plugin-dnd/src/lib.rs, src-tauri/plugins/tauri-plugin-dnd/src/logic.rs, src-tauri/plugins/tauri-plugin-dnd/src/mobile.rs, src-tauri/plugins/tauri-plugin-dnd/src/models.rs: created the local Tauri plugin, Android implementation, desktop stub, and permissions.
 2. Checks I ran (command and result):
- - cargo test -p studybites-core: PASSED (all suites; 100 tests)
- - npm run typecheck: PASSED
- - npm run build:web: PASSED
- - git diff --check: PASSED
- - Failures: none
+ - cargo fmt --all --check; cargo test -p tauri-plugin-dnd; cargo test -p studybites-core; cargo check --workspace --all-targets; cargo clippy --workspace --all-targets -- -D warnings: PASSED.
+ - cargo check -p tauri-plugin-dnd --target aarch64-linux-android: PASSED.
+ - npm run typecheck; npm run build:web; git diff --check: PASSED.
+ - ./gradlew :tauri-plugin-dnd:compileDebugKotlin --no-daemon: NOT RUN; no Gradle wrapper or system Gradle is installed.
+ - Failures: none in the final checks.
 3. Not verified:
- - Android device checklist: background to WhatsApp, process swipe-away/reopen, and Developer options "Don't keep activities".
+ - Kotlin/Gradle compilation and Android device behavior.
 4. Where I changed or went beyond the prompt, and why:
- - Added an explicit populated-database migration test to cover the stated upgrade scenario.
+ - D40 records Android-only scope, priority default, conservative restore, and crash recovery.
 5. Problems, risks and anything I guessed:
- - No frontend test runner is configured; Rust integration, typecheck, and production build checks passed.
+ - Full Tauri/Android build was not run per working rules; Android plugin Gradle integration appears in generated settings but Kotlin remains uncompiled here.
 6. What the developer must do or test now (device checklist, secrets, settings):
- - Verify on Android: start a 10-minute session and grade two cards; switch to WhatsApp and return; swipe away and reopen; repeat with "Don't keep activities". Confirm the same screen/card and timer are restored.
+ - On Android: grant DND access; enable the setting and start/end a study; kill the app mid-session and verify restore by planned end +2 minutes; manually change DND and verify StudyBites preserves that choice; test OEM settings behavior.
 7. What is left:
- - Remaining parts of this task: Android device verification
- - Roadmap status: item 1 [~], item 11 [~]; all other items 2-10 and 12-16 are [ ]
- - Suggested next step: continue to Task D; retain the device checklist for validation.
+ - Remaining parts of this task: Android DND device and Kotlin/Gradle verification.
+ - Roadmap status: items 1, 2, 3, 11 [~]; items 4-10, 12-16 [ ].
+ - Suggested next step: continue to Task F; return to the device checklist before marking item 3 complete.
+READY FOR NEXT: yes
+=== END REPORT ===
+
+=== STUDYBITES HANDOFF REPORT ===
+Task: F — Bug report pipeline | Status: partly done
+Branch and last commit: ccr-cd109432-nnvymz 4d1c08c | CI: not run
+1. What I did (one line per change):
+ - Edited: .github/workflows/build-mobile.yml, .github/workflows/build-windows.yml, README.md, crates/studybites-core/src/lib.rs, crates/studybites-core/src/migrations.rs, crates/studybites-core/src/providers.rs, crates/studybites-core/tests/storage.rs, docs/DECISIONS.md, docs/PRODUCT_PLAN.md, docs/ROADMAP.md, src-tauri/src/lib.rs, src-tauri/src/phase2.rs, src-tauri/src/state.rs, src/App.tsx, src/api/index.ts, src/api/mock.ts, src/api/tauri.ts, src/api/types.ts, src/routes/SettingsPage.tsx, src/styles/app.css: wired opt-in reports, minimized diagnostics, encrypted outbox, and compile-time endpoint configuration.
+ - New: .github/workflows/deploy-bug-worker.yml, crates/studybites-core/src/bugreport.rs, src/components/ReportBugDialog.tsx, src/lib/diag.ts, workers/bug-report/README.md, workers/bug-report/package-lock.json, workers/bug-report/package.json, workers/bug-report/src/index.ts, workers/bug-report/test/index.test.ts, workers/bug-report/tsconfig.json, workers/bug-report/wrangler.toml: added validation, redaction, email delivery, rate limits, tests and deployment instructions.
+2. Checks I ran (command and result):
+ - cargo fmt --all --check; cargo test -p studybites-core; cargo check --workspace --all-targets; cargo clippy --workspace --all-targets -- -D warnings: PASSED.
+ - npm run build:web: PASSED.
+ - cd workers/bug-report && npm test && npm run typecheck: PASSED (9 tests).
+ - git diff --check: PASSED.
+ - npm test from repository root: FAILED because no root test script exists; the Worker test command above passed from its directory.
+ - Failures: `npm error Missing script: "test"` (wrong working directory; no code test failures).
+3. Not verified:
+ - Worker deployment/live Resend delivery; Settings UI, screenshot picker, clipboard, and offline queue on Windows or Android devices.
+4. Where I changed or went beyond the prompt, and why:
+ - D41 records opt-in reporting and diagnostic data minimization; generic error categories prevent raw error text from being uploaded.
+5. Problems, risks and anything I guessed:
+ - `onboarding@resend.dev` is test-only. Cloudflare KV rate counters are eventually consistent; concurrent requests can race.
+6. What the developer must do or test now (device checklist, secrets, settings):
+ - Configure the Worker secrets and `STUDYBITES_BUG_REPORT_URL` repository variable per workers/bug-report/README.md; deploy and verify delivery. Replace the test sender before public launch. On Windows and Android, test send, three resized screenshots, copy fallback, offline queue/retry, and privacy disclosure.
+7. What is left:
+ - Remaining parts of this task: Worker deployment and device verification.
+ - Roadmap status: items 1, 2, 3, 4, 11 [~]; items 5-10, 12-16 [ ].
+ - Suggested next step: deploy the Worker with owner-managed secrets, then continue Task G.
 READY FOR NEXT: yes
 === END REPORT ===
 
@@ -175,5 +148,114 @@ Branch and last commit: ccr-cd109432-nnvymz 62869a9 | CI: not run
  - Remaining parts of this task: live API and Settings/device verification.
  - Roadmap status: items 1-4 and 11 [~]; items 5-10 and 12-16 [ ].
  - Suggested next step: continue to Task H.
+READY FOR NEXT: yes
+=== END REPORT ===
+
+=== STUDYBITES HANDOFF REPORT ===
+Task: Codespace disk cleanup | Status: done
+Branch and last commit: ccr-cd109432-nnvymz e888584 | CI: not run
+1. What I did (one line per change):
+ - target/ (ignored generated output, removed): Cargo build artifacts removed; cargo clean deleted the full 18.3 GB target tree.
+ - src-tauri/gen/android/{app/build,build,buildSrc/build,.gradle} (ignored generated output, removed): removed Android Gradle outputs and caches; preserved generated project sources and signing properties.
+ - dist/ (ignored generated output, removed): removed the 348 KB frontend bundle.
+ - docs/STATUS.md (replaced): recorded cleanup details and remaining build implications.
+2. Checks I ran (command and result):
+ - Disk usage inspection (`du`, `df`): PASSED; about 18.3 GB recovered and 20 GB available.
+ - Git status: PASSED; only the pre-existing `src/App.tsx` modification remains tracked.
+ - Failures: none.
+3. Not verified:
+ - Rust Analyzer/build behavior after Cargo artifacts are regenerated.
+4. Where I changed or went beyond the prompt, and why:
+ - Removed ignored Android Gradle caches and the small `dist/` output as disposable generated files.
+5. Problems, risks and anything I guessed:
+ - Cargo cleanup removed the complete `target/` directory, including Rust Analyzer's cached build artifacts; later Rust checks will rebuild them.
+6. What the developer must do or test now (device checklist, secrets, settings):
+ - No immediate action. The next Rust analysis/build may take longer while artifacts are recreated.
+7. What is left:
+ - Remaining parts of this task: none
+ - Roadmap status: item 1 [~], item 11 [~]; all other items [ ]
+ - Suggested next step: continue the pending task; avoid rebuilding until needed.
+READY FOR NEXT: yes
+=== END REPORT ===
+
+=== STUDYBITES HANDOFF REPORT ===
+Task: H — Managed AI Worker | Status: partly done
+Branch and last commit: 5a78c3c | CI: not run at the time; Rust checks to be confirmed by CI on the PR
+1. What I did (one line per change):
+ - workers/ai-proxy/src/index.ts (new): Worker that verifies the activation code signature, applies per-license UTC daily limits in KV, and proxies chat requests to the configured Gemini or DeepSeek key.
+ - workers/ai-proxy/{package.json,package-lock.json,tsconfig.json,wrangler.toml,README.md} (new): Worker dependencies, config with a USAGE KV binding, and deployment instructions.
+ - workers/ai-proxy/test/{index.test.ts,fixtures/license.json} (new): tests for signature checks, limits and routing, with no real provider key.
+ - .github/workflows/deploy-ai-worker.yml (new): deploys the Worker on main when workers/ai-proxy changes, validates required secrets, then sets Worker secrets.
+ - src-tauri/src/managed_ai.rs (new): Rust client that sends the stored activation code to the Worker and maps its responses.
+ - crates/studybites-core/src/{ai.rs,providers.rs} and tests (edited): managed AI added as the final fallback only, after the BYO-key providers.
+ - src-tauri/src/{lib.rs,keys.rs,phase2.rs,worker.rs} (edited): command registration, key handling, usage call and job-queue fallback wiring.
+ - src/api/{mock.ts,tauri.ts,types.ts}, src/routes/SettingsPage.tsx (edited): managed AI status, plan usage display and browser mock.
+ - README.md, docs/{DECISIONS.md,PRODUCT_PLAN.md,ROADMAP.md} (edited): documented the fallback, limits and D43.
+ - .github/workflows/{build-windows.yml,build-mobile.yml} (edited): Worker URL configuration for release builds.
+2. Checks I ran (command and result):
+ - npm ci (repo root): PASSED
+ - npm run typecheck: PASSED
+ - npm run build:web: PASSED
+ - workers/ai-proxy: npm ci, npm test (10 tests), npm run typecheck: PASSED
+ - Rust checks (fmt, check, clippy, cargo test --workspace): NOT RUN locally (no Rust toolchain on this machine); to be confirmed by CI on the PR.
+ - Failures: none in the checks that ran.
+3. Not verified:
+ - Real Cloudflare deployment, KV namespace creation and live usage limits.
+ - Live Gemini/DeepSeek calls through the Worker; no provider key was used.
+ - Settings usage display and fallback behavior on Windows or Android devices.
+ - Concurrent KV counter races under real traffic.
+4. Where I changed or went beyond the prompt, and why:
+ - Managed AI is a last-resort fallback only; BYO-key providers keep priority. Recorded as D43 with the KV/limit caveats.
+5. Problems, risks and anything I guessed:
+ - KV increments are not atomic and usage is recorded before the upstream call, so the limits are best-effort, not billing-accurate.
+ - A request is not independently bound to the activation code's device fingerprint.
+6. What the developer must do or test now (device checklist, secrets, settings):
+ - Create a KV namespace named USAGE in Cloudflare and paste its id into workers/ai-proxy/wrangler.toml.
+ - Set repository secrets STUDYBITES_LICENSE_PUBKEY, STUDYBITES_AI_ADMIN_TOKEN, CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID and at least one of STUDYBITES_AI_GEMINI_KEY / STUDYBITES_AI_DEEPSEEK_KEY, then run the deploy workflow.
+ - On a device, use up the BYO-key providers and confirm managed AI answers, that Settings shows usage, and that the daily limit is enforced.
+7. What is left:
+ - Remaining parts of this task: KV id, secrets, deployment and live/device verification.
+ - Roadmap status: items 1, 2, 3, 4, 11, 13 [~]; items 5-10, 12, 14-17 [ ].
+ - Suggested next step: complete the Cloudflare setup above, then verify the fallback on a device.
+READY FOR NEXT: yes
+=== END REPORT ===
+
+=== STUDYBITES HANDOFF REPORT ===
+Task: Repo stabilisation after the Copilot work (Worker CI) | Status: done
+Branch and last commit: chore/stabilise-workers-ci, this commit | CI: to be confirmed on the PR
+1. What I did (one line per change):
+ - workers/ai-proxy/vitest.config.ts (new): scopes vitest to test/**/*.test.ts so it no longer loads the repo-root vite.config.ts in a clean CI job.
+ - workers/bug-report/vitest.config.ts (new): same file, for the bug-report Worker.
+ - .github/workflows/ci.yml (edited): added a "workers" job that runs npm ci, npm test and npm run typecheck for workers/bug-report and workers/ai-proxy on the same push/PR triggers.
+ - .github/workflows/deploy-ai-worker.yml (edited): added a pre-deploy check that fails with a clear message while workers/ai-proxy/wrangler.toml still contains SET_USAGE_KV_NAMESPACE_ID.
+ - studybites-release.base64 (deleted): removed the empty tracked file from the repo root.
+ - .gitignore (edited): ignores *.jks, *.keystore, *.p12 and *.base64.
+ - docs/STATUS.md (replaced): reports reordered newest-last, plus the missing Task H report and this one.
+ - docs/DECISIONS.md (edited): added D44 for the Worker CI/exclusion rules.
+2. Checks I ran (command and result):
+ - npm ci (repo root): PASSED
+ - npm run typecheck: PASSED
+ - npm run build:web: PASSED
+ - workers/ai-proxy: npm ci, npm test (10 tests), npm run typecheck: PASSED
+ - workers/bug-report: npm ci, npm test (9 tests), npm run typecheck: PASSED
+ - Without the new vitest.config.ts, `npm test` in workers/ai-proxy picked up the root vite.config.ts and loaded the React plugin; with it, only the Worker config is used.
+ - Rust checks (fmt, check, clippy, cargo test --workspace): NOT RUN locally (no Rust toolchain); to be confirmed by CI on the PR.
+ - Failures: none in the checks that ran.
+3. Not verified:
+ - The green CI run itself, including the new "workers" matrix job and the deploy guard, which only run on GitHub.
+ - Worker deployment against real Cloudflare.
+4. Where I changed or went beyond the prompt, and why:
+ - Also ran the bug-report Worker's install, tests and typecheck, because its vitest config was added in this task.
+ - Added D44 to docs/DECISIONS.md, since the CI contract changed and the decision log is the place to say why.
+5. Problems, risks and anything I guessed:
+ - The deploy guard reads wrangler.toml with grep, so it only catches the literal placeholder; a wrong but non-placeholder KV id still reaches Cloudflare.
+ - .gitignore cannot untrack already-committed files; nothing sensitive is tracked today.
+6. What the developer must do or test now (device checklist, secrets, settings):
+ - Watch the PR's CI run: the existing "check" job plus the new "workers" job must both be green.
+ - Before deploying the managed AI Worker, create the USAGE KV namespace and replace the placeholder id in workers/ai-proxy/wrangler.toml.
+7. What is left:
+ - Remaining parts of this task: none; waiting on CI and the PR review.
+ - Roadmap status: items 1, 2, 3, 4, 11, 13 [~]; items 5-10, 12, 14-17 [ ].
+ - Suggested next step: merge the PR once CI is green, then complete the Cloudflare KV setup for Task H.
 READY FOR NEXT: yes
 === END REPORT ===
