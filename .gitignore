@@ -17,6 +17,10 @@ src-tauri/resources/models/
 *.pem
 *.key
 *.pk8
+*.jks
+*.keystore
+*.p12
+*.base64
 *_private*
 *secret*
 license-keys/
