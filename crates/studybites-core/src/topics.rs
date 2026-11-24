@@ -19,16 +19,51 @@ fn row_to_topic(row: &Row) -> rusqlite::Result<Topic> {
         is_off_scheme: row.get::<_, i64>("is_off_scheme")? != 0,
         supports_topic_id: row.get("supports_topic_id")?,
         is_preview: row.get::<_, i64>("is_preview")? != 0,
+        archived_at: row.get("archived_at")?,
+        coverage: row.get("coverage")?,
         children: Vec::new(),
     })
 }
 
-/// Every topic of a subject as a flat list, ordered by parent then position.
+/// Every live topic of a subject as a flat list, ordered by parent then
+/// position.
+///
+/// Archived topics are hidden, and so are subtopics of an archived parent:
+/// archiving a topic archives its children too, but this keeps the outline
+/// whole if a child was restored on its own.
 pub fn list_flat(db: &Db, subject_id: i64) -> Result<Vec<Topic>> {
+    let mut stmt = db.conn().prepare(
+        "SELECT * FROM scheme_topics t
+          WHERE t.subject_id = ?1
+            AND t.archived_at IS NULL
+            AND (t.parent_id IS NULL
+                 OR EXISTS (SELECT 1 FROM scheme_topics p
+                             WHERE p.id = t.parent_id AND p.archived_at IS NULL))
+          ORDER BY (t.parent_id IS NOT NULL), t.parent_id, t.position, t.id",
+    )?;
+    let rows = stmt.query_map([subject_id], row_to_topic)?;
+    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+}
+
+/// Every topic of a subject, archived ones included, ordered by parent then
+/// position. Only the outline diff needs this: it has to see archived topics
+/// to notice when the new outline brings one back.
+pub fn list_all(db: &Db, subject_id: i64) -> Result<Vec<Topic>> {
     let mut stmt = db.conn().prepare(
         "SELECT * FROM scheme_topics
           WHERE subject_id = ?1
           ORDER BY (parent_id IS NOT NULL), parent_id, position, id",
+    )?;
+    let rows = stmt.query_map([subject_id], row_to_topic)?;
+    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+}
+
+/// Topics that left the outline, newest archive first.
+pub fn list_archived(db: &Db, subject_id: i64) -> Result<Vec<Topic>> {
+    let mut stmt = db.conn().prepare(
+        "SELECT * FROM scheme_topics
+          WHERE subject_id = ?1 AND archived_at IS NOT NULL
+          ORDER BY archived_at DESC, position, id",
     )?;
     let rows = stmt.query_map([subject_id], row_to_topic)?;
     Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
@@ -135,14 +170,80 @@ pub fn update(db: &Db, id: i64, title: Option<&str>, week: Option<Option<i64>>) 
     get(db, id)
 }
 
-/// Delete a topic. Its children go with it (ON DELETE CASCADE); materials,
-/// notes and cards keep existing with `topic_id` set to NULL.
+/// Delete a topic for good. Its children go with it (ON DELETE CASCADE);
+/// materials, notes and cards keep existing with `topic_id` set to NULL.
+///
+/// Outline updates never call this: they archive instead, so a topic that
+/// comes back later still owns its cards. The UI only offers this from the
+/// archived list, behind a warning that says exactly that.
 pub fn delete(db: &Db, id: i64) -> Result<()> {
     let topic = get(db, id)?;
     db.conn()
         .execute("DELETE FROM scheme_topics WHERE id = ?1", [id])?;
     compact_positions(db, topic.subject_id, topic.parent_id)?;
     Ok(())
+}
+
+/// Take a topic and its subtopics out of the outline without touching their
+/// notes or cards.
+pub fn archive(db: &Db, id: i64) -> Result<Topic> {
+    let topic = get(db, id)?;
+    db.conn().execute(
+        "UPDATE scheme_topics
+            SET archived_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+          WHERE (id = ?1 OR parent_id = ?1) AND archived_at IS NULL",
+        [id],
+    )?;
+    compact_positions(db, topic.subject_id, topic.parent_id)?;
+    get(db, topic.id)
+}
+
+/// Put an archived topic and its subtopics back. It goes to the end of its
+/// group, because the positions of the topics that stayed were compacted
+/// while it was away. If its parent is archived too, the parent comes back
+/// with it: a live subtopic under an archived parent would be invisible
+/// everywhere.
+pub fn restore(db: &Db, id: i64) -> Result<Topic> {
+    let topic = get(db, id)?;
+    db.conn().execute(
+        "UPDATE scheme_topics
+            SET archived_at = NULL
+          WHERE id = ?1 OR parent_id = ?1",
+        [id],
+    )?;
+    if let Some(parent_id) = topic.parent_id {
+        db.conn().execute(
+            "UPDATE scheme_topics SET archived_at = NULL WHERE id = ?1",
+            [parent_id],
+        )?;
+    }
+    let position: i64 = db.conn().query_row(
+        "SELECT COALESCE(MAX(position) + 1, 0) FROM scheme_topics
+          WHERE subject_id = ?1 AND parent_id IS ?2 AND id <> ?3",
+        (topic.subject_id, topic.parent_id, id),
+        |r| r.get(0),
+    )?;
+    db.conn().execute(
+        "UPDATE scheme_topics SET position = ?2 WHERE id = ?1",
+        (id, position),
+    )?;
+    get(db, topic.id)
+}
+
+/// What the student knows about this topic's coverage: `unknown`, `taught`
+/// (in class) or `self` (self-studied).
+pub fn set_coverage(db: &Db, id: i64, coverage: &str) -> Result<Topic> {
+    if !matches!(coverage, "unknown" | "taught" | "self") {
+        return Err(CoreError::Invalid(
+            "Coverage must be unknown, taught or self".into(),
+        ));
+    }
+    get(db, id)?;
+    db.conn().execute(
+        "UPDATE scheme_topics SET coverage = ?2 WHERE id = ?1",
+        (id, coverage),
+    )?;
+    get(db, id)
 }
 
 /// Rewrite the order of one sibling group. `ordered_ids` must be exactly the
@@ -157,7 +258,7 @@ pub fn reorder(
     let mut current: Vec<i64> = {
         let mut stmt = db.conn().prepare(
             "SELECT id FROM scheme_topics
-              WHERE subject_id = ?1 AND parent_id IS ?2",
+              WHERE subject_id = ?1 AND parent_id IS ?2 AND archived_at IS NULL",
         )?;
         let rows = stmt.query_map((subject_id, parent_id), |r| r.get(0))?;
         rows.collect::<rusqlite::Result<Vec<_>>>()?
@@ -188,7 +289,7 @@ pub fn nudge(db: &mut Db, id: i64, delta: i64) -> Result<Vec<Topic>> {
     let siblings: Vec<i64> = {
         let mut stmt = db.conn().prepare(
             "SELECT id FROM scheme_topics
-              WHERE subject_id = ?1 AND parent_id IS ?2
+              WHERE subject_id = ?1 AND parent_id IS ?2 AND archived_at IS NULL
               ORDER BY position, id",
         )?;
         let rows = stmt.query_map((topic.subject_id, topic.parent_id), |r| r.get(0))?;
@@ -207,12 +308,13 @@ pub fn nudge(db: &mut Db, id: i64, delta: i64) -> Result<Vec<Topic>> {
     reorder(db, topic.subject_id, topic.parent_id, &order)
 }
 
-/// Close gaps left by a delete so positions stay 0..n-1.
+/// Close gaps left by a delete so positions stay 0..n-1. Archived topics are
+/// skipped: their positions no longer matter and they are not in the outline.
 fn compact_positions(db: &Db, subject_id: i64, parent_id: Option<i64>) -> Result<()> {
     let ids: Vec<i64> = {
         let mut stmt = db.conn().prepare(
             "SELECT id FROM scheme_topics
-              WHERE subject_id = ?1 AND parent_id IS ?2
+              WHERE subject_id = ?1 AND parent_id IS ?2 AND archived_at IS NULL
               ORDER BY position, id",
         )?;
         let rows = stmt.query_map((subject_id, parent_id), |r| r.get(0))?;

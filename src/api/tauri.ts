@@ -13,6 +13,8 @@ import type {
   ManagedAiStatus,
   MarkOutcome,
   NewTopic,
+  OutlineDiff,
+  OutlineUpdate,
   Subject,
   Topic,
   TopicPatch,
@@ -62,6 +64,17 @@ export const tauriBackend: Backend = {
   topicReorder: (subjectId, parentId, orderedIds) =>
     invoke<Topic[]>("topic_reorder", { subjectId, parentId, orderedIds }),
   topicNudge: (id, delta) => invoke<Topic[]>("topic_nudge", { id, delta }),
+  topicArchive: (id) => invoke<Topic>("topic_archive", { id }),
+  topicRestore: (id) => invoke<Topic>("topic_restore", { id }),
+  topicsArchived: (subjectId) => invoke<Topic[]>("topics_archived", { subjectId }),
+  topicSetCoverage: (id, coverage) =>
+    invoke<Topic>("topic_set_coverage", { id, coverage }),
+  outlineDiff: (subjectId, entries) =>
+    invoke<OutlineDiff>("outline_diff", { subjectId, entries }),
+  outlineApply: (subjectId, decisions) =>
+    invoke<Topic[]>("outline_apply", { subjectId, decisions }),
+  outlineHistory: (subjectId, limit) =>
+    invoke<OutlineUpdate[]>("outline_history", { subjectId, limit }),
 
   settingGet: (key) => invoke<string | null>("setting_get", { key }),
   settingSet: (key, value) => invoke<void>("setting_set", { key, value }),

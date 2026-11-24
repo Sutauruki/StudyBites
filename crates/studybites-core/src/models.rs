@@ -24,8 +24,19 @@ pub struct Topic {
     pub is_off_scheme: bool,
     pub supports_topic_id: Option<i64>,
     pub is_preview: bool,
+    /// Set when the topic left the outline. Archived topics keep their notes
+    /// and cards; they are only hidden from the outline and from studying.
+    #[serde(default)]
+    pub archived_at: Option<String>,
+    /// `unknown`, `taught` or `self`. Shown as a small badge on the row.
+    #[serde(default = "default_coverage")]
+    pub coverage: String,
     /// Direct children, ordered by position. Phase 1 nests one level deep.
     pub children: Vec<Topic>,
+}
+
+fn default_coverage() -> String {
+    "unknown".to_string()
 }
 
 /// Input for creating a topic.

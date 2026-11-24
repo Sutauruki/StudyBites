@@ -345,6 +345,7 @@ fn multiple_choice_cards(db: &Db, subject_ids: &[i64]) -> Result<Vec<Candidate>>
           WHERE c.kind = 'mcq'
             AND c.retired = 0
             AND c.is_preview = 0
+            AND (t.id IS NULL OR t.archived_at IS NULL)
             AND COALESCE(m.subject_id, t.subject_id) IN ({placeholders})"
     );
 

@@ -19,8 +19,8 @@ fn migrations_bring_schema_to_current_version() {
         )
         .unwrap();
     assert_eq!(
-        tables, 17,
-        "the Section 5 tables, plus EULA acceptance, CBT, resumable sessions, photo pages, and bug reports"
+        tables, 18,
+        "the Section 5 tables, plus EULA acceptance, CBT, resumable sessions, photo pages, bug reports, and outline updates"
     );
 }
 
@@ -63,6 +63,12 @@ fn latest_migration_preserves_existing_data() {
         [],
     )
     .unwrap();
+    conn.execute(
+        "INSERT INTO scheme_topics(subject_id, title, position, is_off_scheme)
+         VALUES (1, 'Logarithms', 0, 0)",
+        [],
+    )
+    .unwrap();
 
     migrations::migrate(&mut conn).unwrap();
 
@@ -91,12 +97,31 @@ fn latest_migration_preserves_existing_data() {
     let material_count: i64 = conn
         .query_row("SELECT count(*) FROM materials", [], |row| row.get(0))
         .unwrap();
+    let outline_updates_exists: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'outline_updates'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    // A topic that existed before the update columns were added keeps its row
+    // and gets the defaults: live, and coverage not set.
+    let (archived_at, coverage): (Option<String>, String) = conn
+        .query_row(
+            "SELECT archived_at, coverage FROM scheme_topics WHERE title = 'Logarithms'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
 
     assert_eq!(subject_name, "MTH 101");
     assert_eq!(session_count, 1);
     assert_eq!(photo_pages_exists, 1);
     assert_eq!(bug_outbox_exists, 1);
     assert_eq!(material_count, 1);
+    assert_eq!(outline_updates_exists, 1);
+    assert_eq!(archived_at, None, "an import never archives what is there");
+    assert_eq!(coverage, "unknown");
 }
 
 #[test]

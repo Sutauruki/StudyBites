@@ -15,6 +15,7 @@ import type {
   MaterialPage,
   Note,
   NewTopic,
+  OutlineUpdate,
   ProviderInfo,
   QueueCounts,
   CbtMarked,
@@ -35,6 +36,7 @@ import type {
   TopicPatch,
   UpdateStatus,
 } from "./types";
+import { applyOutline, diffOutline } from "./mockOutline";
 
 /**
  * Browser-only stand-in for the Rust backend (Brief 11.3), so the UI can be
@@ -57,6 +59,7 @@ interface Rows {
   notes: Note[];
   cards: Array<Card & { due: number; isNewCard: boolean }>;
   sessions: MockSession[];
+  outlineUpdates: OutlineUpdate[];
 }
 
 interface MockSession {
@@ -80,13 +83,21 @@ const empty = (): Rows => ({
   notes: [],
   cards: [],
   sessions: [],
+  outlineUpdates: [],
 });
 
 function read(): Rows {
   try {
     const raw = localStorage.getItem(STORE_KEY);
     // Merge with `empty()` so data saved before Phase 2 still loads.
-    return raw ? { ...empty(), ...(JSON.parse(raw) as Rows) } : empty();
+    const rows = raw ? { ...empty(), ...(JSON.parse(raw) as Rows) } : empty();
+    // Topics saved before outline updates existed have neither field.
+    rows.topics = rows.topics.map((topic) => ({
+      ...topic,
+      archivedAt: topic.archivedAt ?? null,
+      coverage: topic.coverage ?? "unknown",
+    }));
+    return rows;
   } catch {
     return empty();
   }
@@ -114,7 +125,9 @@ const MAX_TITLE = 200;
 function withCount(rows: Rows, subject: Omit<Subject, "topicCount">): Subject {
   return {
     ...subject,
-    topicCount: rows.topics.filter((t) => t.subjectId === subject.id).length,
+    topicCount: rows.topics.filter(
+      (t) => t.subjectId === subject.id && t.archivedAt === null,
+    ).length,
   };
 }
 
@@ -132,7 +145,12 @@ function findTopic(rows: Rows, id: number): Omit<Topic, "children"> {
 
 function siblings(rows: Rows, subjectId: number, parentId: number | null): number[] {
   return rows.topics
-    .filter((t) => t.subjectId === subjectId && (t.parentId ?? null) === parentId)
+    .filter(
+      (t) =>
+        t.subjectId === subjectId &&
+        (t.parentId ?? null) === parentId &&
+        t.archivedAt === null,
+    )
     .sort((a, b) => a.position - b.position || a.id - b.id)
     .map((t) => t.id);
 }
@@ -144,12 +162,18 @@ function compact(rows: Rows, subjectId: number, parentId: number | null): void {
 }
 
 function tree(rows: Rows, subjectId: number): Topic[] {
-  const all = rows.topics.filter((t) => t.subjectId === subjectId);
-  const roots = all
+  const live = rows.topics.filter(
+    (t) =>
+      t.subjectId === subjectId &&
+      t.archivedAt === null &&
+      (t.parentId === null ||
+        rows.topics.some((p) => p.id === t.parentId && p.archivedAt === null)),
+  );
+  const roots = live
     .filter((t) => t.parentId === null)
     .sort((a, b) => a.position - b.position || a.id - b.id)
     .map((t) => ({ ...t, children: [] as Topic[] }));
-  all
+  live
     .filter((t) => t.parentId !== null)
     .sort((a, b) => a.position - b.position || a.id - b.id)
     .forEach((child) => {
@@ -158,6 +182,14 @@ function tree(rows: Rows, subjectId: number): Topic[] {
       else roots.push({ ...child, children: [] });
     });
   return roots;
+}
+
+/** Topics that left the outline, newest archive first. */
+function archivedTree(rows: Rows, subjectId: number): Topic[] {
+  return rows.topics
+    .filter((t) => t.subjectId === subjectId && t.archivedAt !== null)
+    .sort((a, b) => (b.archivedAt ?? "").localeCompare(a.archivedAt ?? "") || a.position - b.position || a.id - b.id)
+    .map((t) => ({ ...t, children: [] as Topic[] }));
 }
 
 /** A touch of latency so loading states get exercised during UI work. */
@@ -188,7 +220,7 @@ function mockMcqs(subjectIds: number[]): MockMcq[] {
   return state.cards.flatMap((card) => {
     if (card.payload.kind !== "mcq") return [];
     const topic = state.topics.find((t) => t.id === card.topicId);
-    if (!topic || !subjectIds.includes(topic.subjectId)) return [];
+    if (!topic || topic.archivedAt !== null || !subjectIds.includes(topic.subjectId)) return [];
     return [
       {
         cardId: card.id,
@@ -427,6 +459,8 @@ export const mockBackend: Backend = {
       isOffScheme: input.isOffScheme ?? false,
       supportsTopicId: null,
       isPreview: false,
+      archivedAt: null,
+      coverage: "unknown" as const,
     };
     rows.topics.push(topic);
     write(rows);
@@ -486,6 +520,100 @@ export const mockBackend: Backend = {
     });
     write(rows);
     return tick(tree(rows, topic.subjectId));
+  },
+
+  // Archive rather than delete: the notes and cards stay on the device and
+  // come back with the topic. Mirrors topics::archive in Rust, including the
+  // cascade to subtopics.
+  topicArchive: (id) => {
+    const rows = read();
+    const topic = findTopic(rows, id);
+    const stamp = new Date().toISOString();
+    rows.topics
+      .filter((t) => t.id === id || t.parentId === id)
+      .forEach((t) => {
+        t.archivedAt = t.archivedAt ?? stamp;
+      });
+    compact(rows, topic.subjectId, topic.parentId);
+    write(rows);
+    return tick({ ...topic, children: [] });
+  },
+
+  topicRestore: (id) => {
+    const rows = read();
+    const topic = findTopic(rows, id);
+    rows.topics
+      .filter((t) => t.id === id || t.parentId === id)
+      .forEach((t) => {
+        t.archivedAt = null;
+      });
+    if (topic.parentId !== null) {
+      // A live subtopic under an archived parent would be invisible.
+      findTopic(rows, topic.parentId).archivedAt = null;
+    }
+    topic.position = rows.topics.filter(
+      (t) => t.subjectId === topic.subjectId && t.parentId === topic.parentId && t.id !== id,
+    ).length;
+    write(rows);
+    return tick({ ...topic, children: [] });
+  },
+
+  topicsArchived: (subjectId) => {
+    const rows = read();
+    findSubject(rows, subjectId);
+    return tick(archivedTree(rows, subjectId));
+  },
+
+  topicSetCoverage: (id, coverage) => {
+    if (!["unknown", "taught", "self"].includes(coverage)) {
+      throw "Coverage must be unknown, taught or self";
+    }
+    const rows = read();
+    const topic = findTopic(rows, id);
+    topic.coverage = coverage;
+    write(rows);
+    return tick({ ...topic, children: [] });
+  },
+
+  outlineDiff: (subjectId, entries) => {
+    const rows = read();
+    findSubject(rows, subjectId);
+    return tick(diffOutline(rows.topics, subjectId, entries));
+  },
+
+  outlineApply: (subjectId, decisions) => {
+    const rows = read();
+    findSubject(rows, subjectId);
+    applyOutline(
+      rows.topics,
+      subjectId,
+      decisions,
+      () => rows.nextId++,
+      () => new Date().toISOString(),
+    );
+    rows.outlineUpdates = [
+      ...rows.outlineUpdates,
+      {
+        id: rows.outlineUpdates.length + 1,
+        createdAt: new Date().toISOString(),
+        added: decisions.added.length - (decisions.pairings?.length ?? 0),
+        removed: decisions.removed.length - (decisions.pairings?.length ?? 0),
+        renamed: decisions.renamed.length + (decisions.pairings?.length ?? 0),
+        moved: decisions.moved.length,
+      },
+    ];
+    write(rows);
+    return tick(tree(rows, subjectId));
+  },
+
+  outlineHistory: (subjectId, limit) => {
+    const rows = read();
+    findSubject(rows, subjectId);
+    return tick(
+      [...rows.outlineUpdates]
+        .reverse()
+        .slice(0, Math.min(Math.max(limit ?? 10, 1), 50)),
+    );
   },
 
   settingGet: (key) => tick(read().settings[key] ?? null),
@@ -685,6 +813,8 @@ export const mockBackend: Backend = {
         isOffScheme: false,
         supportsTopicId: null,
         isPreview: false,
+        archivedAt: null,
+        coverage: "unknown" as const,
       };
       rows.topics.push(parent);
       for (const sub of entry.subtopics ?? []) {
@@ -699,6 +829,8 @@ export const mockBackend: Backend = {
           isOffScheme: false,
           supportsTopicId: null,
           isPreview: false,
+          archivedAt: null,
+          coverage: "unknown" as const,
         });
       }
     }
@@ -827,7 +959,7 @@ export const mockBackend: Backend = {
     const rows = read();
     return tick<TopicMastery[]>(
       rows.topics
-        .filter((t) => t.subjectId === subjectId)
+        .filter((t) => t.subjectId === subjectId && t.archivedAt === null)
         .map((t) => {
           const mine = rows.cards.filter((c) => c.topicId === t.id);
           const studied = mine.filter((c) => !c.isNewCard).length;
@@ -975,8 +1107,11 @@ function hasSupportedImageMagic(page: Uint8Array): boolean {
 /** Cards belonging to a subject, through their topic. */
 function cardsFor(rows: Rows, subjectId: number | null) {
   if (subjectId === null) return rows.cards;
+  // Archived topics are out of the way: their cards wait with them.
   const topicIds = new Set(
-    rows.topics.filter((t) => t.subjectId === subjectId).map((t) => t.id),
+    rows.topics
+      .filter((t) => t.subjectId === subjectId && t.archivedAt === null)
+      .map((t) => t.id),
   );
   return rows.cards.filter((c) => c.topicId !== null && topicIds.has(c.topicId));
 }

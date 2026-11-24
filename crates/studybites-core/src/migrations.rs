@@ -206,6 +206,28 @@ pub const MIGRATIONS: &[&str] = &[
     );
     CREATE INDEX idx_bug_outbox_created ON bug_outbox(created_at, id);
     "#,
+    // ---- 008: outline updates -------------------------------------------
+    // When the lecturer's outline changes, the student re-imports it and sees
+    // what was added, removed or renamed. A topic is archived rather than
+    // deleted, so its notes and cards keep pointing at a row that still
+    // exists: deleting would set `topic_id` to NULL and orphan them.
+    //
+    // `coverage` records whether a topic was taught in class or self-studied.
+    r#"
+    ALTER TABLE scheme_topics ADD COLUMN archived_at TEXT;
+    ALTER TABLE scheme_topics ADD COLUMN coverage TEXT NOT NULL DEFAULT 'unknown'
+        CHECK (coverage IN ('unknown','taught','self'));
+
+    CREATE TABLE outline_updates (
+        id         INTEGER PRIMARY KEY,
+        subject_id INTEGER NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
+        created_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        added      INTEGER NOT NULL,
+        removed    INTEGER NOT NULL,
+        renamed    INTEGER NOT NULL,
+        moved      INTEGER NOT NULL
+    );
+    "#,
 ];
 
 pub const SCHEMA_VERSION: i64 = MIGRATIONS.len() as i64;

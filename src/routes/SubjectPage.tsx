@@ -6,8 +6,10 @@ import {
   type ExplainResult,
   type Material,
   type Note,
+  type OutlineUpdate,
   type Subject,
   type Topic,
+  type TopicCoverage,
   type TopicMastery,
 } from "../api";
 import { Banner, Empty, Loading, Modal } from "../components/ui";
@@ -39,6 +41,12 @@ export function SubjectPage({
   const [uploading, setUploading] = useState(false);
   const [importing, setImporting] = useState(false);
   const [reviewMaterialId, setReviewMaterialId] = useState<number | null>(null);
+  const [archived, setArchived] = useState<Topic[]>([]);
+  const [history, setHistory] = useState<OutlineUpdate[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
+  // Which topic row has its small menu open. One at a time, so the list never
+  // turns into a field of popovers.
+  const [menuFor, setMenuFor] = useState<number | null>(null);
   // Subtopics stay folded until asked for: a full scheme of work should
   // fit on one screen.
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
@@ -51,16 +59,20 @@ export function SubjectPage({
 
   const refresh = useCallback(async () => {
     try {
-      const [s, t, m, mastered] = await Promise.all([
+      const [s, t, m, mastered, gone, updates] = await Promise.all([
         backend.subjectGet(subjectId),
         backend.topicsList(subjectId),
         backend.materialsList(subjectId),
         backend.mastery(subjectId),
+        backend.topicsArchived(subjectId),
+        backend.outlineHistory(subjectId, 10),
       ]);
       setSubject(s);
       setTopics(t);
       setMaterials(m);
       setMastery(mastered);
+      setArchived(gone);
+      setHistory(updates);
       setError(null);
     } catch (err) {
       setError(errorText(err));
@@ -103,6 +115,14 @@ export function SubjectPage({
             {flat.length === 0
               ? "No scheme of work yet."
               : `${flat.length} topic${flat.length === 1 ? "" : "s"} in the outline.`}
+            {history.length > 0 && (
+              <>
+                {" "}
+                <button className="linklike" onClick={() => setShowHistory(true)}>
+                  Outline last updated {shortDate(history[0].createdAt)}
+                </button>
+              </>
+            )}
           </p>
         </div>
         <div className="row">
@@ -163,14 +183,64 @@ export function SubjectPage({
               isFirst={index === 0}
               isLast={index === topics.length - 1}
               expanded={expanded.has(topic.id)}
+              menuFor={menuFor}
               onToggle={() => toggleTopic(topic.id)}
               onAddChild={() => setAdding({ parentId: topic.id })}
               onEdit={setEditing}
               onNudge={(id, delta) => void run(() => backend.topicNudge(id, delta))}
-              onDelete={(id) => void run(() => backend.topicDelete(id))}
+              onArchive={(id) => void run(() => backend.topicArchive(id))}
+              onCoverage={(id, coverage) =>
+                void run(() => backend.topicSetCoverage(id, coverage))
+              }
+              onMenu={setMenuFor}
             />
           ))}
         </div>
+      )}
+
+      {archived.length > 0 && (
+        <section>
+          <h2 className="section__title">Archived topics ({archived.length})</h2>
+          <p className="muted">
+            These left the outline. Their notes and cards are still on this device and come
+            back with the topic.
+          </p>
+          <div className="card list">
+            {archived.map((topic) => (
+              <div className="list__item list__item--static" key={topic.id}>
+                <div className="list__text">
+                  <div className="list__title">{topic.title}</div>
+                  <div className="list__meta">
+                    {topic.parentId === null ? "Topic" : "Subtopic"}
+                    {topic.archivedAt ? ` · archived ${shortDate(topic.archivedAt)}` : ""}
+                  </div>
+                </div>
+                <div className="row">
+                  <button
+                    className="btn"
+                    onClick={() => void run(() => backend.topicRestore(topic.id))}
+                  >
+                    Restore
+                  </button>
+                  <button
+                    className="btn btn--ghost"
+                    onClick={() => {
+                      if (
+                        window.confirm(
+                          `Delete “${topic.title}” for good? Its notes and cards stay, but they will no longer belong to a topic. This cannot be undone.`,
+                        )
+                      ) {
+                        void run(() => backend.topicDelete(topic.id));
+                      }
+                    }}
+                  >
+                    Delete for good
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
       )}
 
       {adding && (
@@ -195,7 +265,36 @@ export function SubjectPage({
             setNotice(`Added ${count} topic${count === 1 ? "" : "s"} from your scheme of work.`);
             void refresh();
           }}
+          onUpdated={(summary) => {
+            setNotice(summary);
+            void refresh();
+          }}
         />
+      )}
+
+      {showHistory && (
+        <Modal
+          title="Outline history"
+          onClose={() => setShowHistory(false)}
+          actions={
+            <button className="btn btn--primary" onClick={() => setShowHistory(false)}>
+              Done
+            </button>
+          }
+        >
+          <div className="card list">
+            {history.map((update) => (
+              <div className="list__item list__item--static" key={update.id}>
+                <div className="list__text">
+                  <div className="list__title">{shortDate(update.createdAt, true)}</div>
+                  <div className="list__meta">
+                    {updateSummary(update)}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Modal>
       )}
 
       {uploading && (
@@ -245,21 +344,27 @@ function OutlineItem({
   isFirst,
   isLast,
   expanded,
+  menuFor,
   onToggle,
   onAddChild,
   onEdit,
   onNudge,
-  onDelete,
+  onArchive,
+  onCoverage,
+  onMenu,
 }: {
   topic: Topic;
   isFirst: boolean;
   isLast: boolean;
   expanded: boolean;
+  menuFor: number | null;
   onToggle: () => void;
   onAddChild: () => void;
   onEdit: (topic: Topic) => void;
   onNudge: (id: number, delta: number) => void;
-  onDelete: (id: number) => void;
+  onArchive: (id: number) => void;
+  onCoverage: (id: number, coverage: TopicCoverage) => void;
+  onMenu: (id: number | null) => void;
 }) {
   const count = topic.children.length;
 
@@ -269,9 +374,12 @@ function OutlineItem({
         topic={topic}
         isFirst={isFirst}
         isLast={isLast}
+        menuOpen={menuFor === topic.id}
         onEdit={onEdit}
         onNudge={onNudge}
-        onDelete={onDelete}
+        onArchive={onArchive}
+        onCoverage={onCoverage}
+        onMenu={onMenu}
         onAddChild={onAddChild}
         toggle={
           <button
@@ -295,9 +403,12 @@ function OutlineItem({
                 topic={child}
                 isFirst={index === 0}
                 isLast={index === count - 1}
+                menuOpen={menuFor === child.id}
                 onEdit={onEdit}
                 onNudge={onNudge}
-                onDelete={onDelete}
+                onArchive={onArchive}
+                onCoverage={onCoverage}
+                onMenu={onMenu}
                 toggle={<span className="outline__toggle outline__toggle--empty" />}
               />
             </div>
@@ -312,9 +423,12 @@ function OutlineRow({
   topic,
   isFirst,
   isLast,
+  menuOpen,
   onEdit,
   onNudge,
-  onDelete,
+  onArchive,
+  onCoverage,
+  onMenu,
   onAddChild,
   toggle,
   trailing,
@@ -322,14 +436,21 @@ function OutlineRow({
   topic: Topic;
   isFirst: boolean;
   isLast: boolean;
+  menuOpen: boolean;
   onEdit: (topic: Topic) => void;
   onNudge: (id: number, delta: number) => void;
-  onDelete: (id: number) => void;
+  onArchive: (id: number) => void;
+  onCoverage: (id: number, coverage: TopicCoverage) => void;
+  onMenu: (id: number | null) => void;
   onAddChild?: () => void;
   toggle: ReactNode;
   trailing?: ReactNode;
 }) {
   const childCount = topic.children.length;
+  const pick = (coverage: TopicCoverage) => {
+    onMenu(null);
+    if (coverage !== topic.coverage) onCoverage(topic.id, coverage);
+  };
 
   return (
     <div className="outline__row">
@@ -339,6 +460,8 @@ function OutlineRow({
       {trailing}
       {topic.isOffScheme && <span className="chip">Off scheme</span>}
       {topic.isPreview && <span className="chip chip--accent">Preview</span>}
+      {topic.coverage === "taught" && <span className="chip chip--ok">Taught</span>}
+      {topic.coverage === "self" && <span className="chip">Self-studied</span>}
 
       <span className="spacer" />
 
@@ -367,19 +490,44 @@ function OutlineRow({
         <button className="btn" onClick={() => onEdit(topic)}>
           Edit
         </button>
-        <button
-          className="btn btn--danger"
-          aria-label={`Delete ${topic.title}`}
-          onClick={() => {
-            const warning =
-              childCount > 0
-                ? `Delete “${topic.title}” and its ${childCount} subtopic${childCount === 1 ? "" : "s"}?`
-                : `Delete “${topic.title}”?`;
-            if (window.confirm(warning)) onDelete(topic.id);
-          }}
-        >
-          ✕
-        </button>
+        <div className="outline__menu">
+          <button
+            className="btn"
+            onClick={() => onMenu(menuOpen ? null : topic.id)}
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            aria-label={`More for ${topic.title}`}
+          >
+            ⋯
+          </button>
+          {menuOpen && (
+            <div className="menu" role="menu">
+              <button className="menu__item" role="menuitem" onClick={() => pick("taught")}>
+                <span className="menu__check">{topic.coverage === "taught" ? "✓" : ""}</span>
+                Taught in class
+              </button>
+              <button className="menu__item" role="menuitem" onClick={() => pick("self")}>
+                <span className="menu__check">{topic.coverage === "self" ? "✓" : ""}</span>
+                Self-studied
+              </button>
+              <button className="menu__item" role="menuitem" onClick={() => pick("unknown")}>
+                <span className="menu__check">{topic.coverage === "unknown" ? "✓" : ""}</span>
+                Not set
+              </button>
+              <div className="menu__rule" />
+              <button
+                className="menu__item"
+                role="menuitem"
+                onClick={() => {
+                  onMenu(null);
+                  onArchive(topic.id);
+                }}
+              >
+                {childCount > 0 ? `Archive with ${childCount} subtopic${childCount === 1 ? "" : "s"}` : "Archive"}
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

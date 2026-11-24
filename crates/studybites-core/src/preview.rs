@@ -41,7 +41,7 @@ fn covered_titles(db: &Db, subject_id: i64, limit: i64) -> Result<Vec<String>> {
         "SELECT DISTINCT t.title
            FROM scheme_topics t
            JOIN notes n ON n.topic_id = t.id AND n.is_preview = 0
-          WHERE t.subject_id = ?1
+          WHERE t.subject_id = ?1 AND t.archived_at IS NULL
           ORDER BY n.id DESC
           LIMIT ?2",
     )?;

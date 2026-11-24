@@ -19,8 +19,14 @@ export interface Topic {
   isOffScheme: boolean;
   supportsTopicId: number | null;
   isPreview: boolean;
+  /** Set when the topic left the outline. Its cards and notes are still there. */
+  archivedAt: string | null;
+  /** `unknown`, `taught` (in class) or `self` (self-studied). */
+  coverage: TopicCoverage;
   children: Topic[];
 }
+
+export type TopicCoverage = "unknown" | "taught" | "self";
 
 export interface NewTopic {
   subjectId: number;
@@ -190,6 +196,14 @@ export interface Backend extends Phase2Backend {
     orderedIds: number[],
   ): Promise<Topic[]>;
   topicNudge(id: number, delta: number): Promise<Topic[]>;
+  topicArchive(id: number): Promise<Topic>;
+  topicRestore(id: number): Promise<Topic>;
+  topicsArchived(subjectId: number): Promise<Topic[]>;
+  topicSetCoverage(id: number, coverage: TopicCoverage): Promise<Topic>;
+
+  outlineDiff(subjectId: number, entries: SchemeEntry[]): Promise<OutlineDiff>;
+  outlineApply(subjectId: number, decisions: OutlineDecisions): Promise<Topic[]>;
+  outlineHistory(subjectId: number, limit?: number): Promise<OutlineUpdate[]>;
 
   settingGet(key: string): Promise<string | null>;
   settingSet(key: string, value: string): Promise<void>;
@@ -338,6 +352,72 @@ export interface SchemeEntry {
   title: string;
   week: number | null;
   subtopics: string[];
+}
+
+/**
+ * Mirrors `outline::OutlineDiff` in crates/studybites-core/src/outline.rs.
+ * Everything the Changes stage shows comes from here; nothing is written
+ * until `outlineApply`.
+ */
+export interface TopicRef {
+  id: number;
+  title: string;
+  week: number | null;
+  parentId: number | null;
+}
+
+export interface RenamedTopic {
+  id: number;
+  old: string;
+  new: string;
+}
+
+export interface MovedTopic {
+  id: number;
+  fromWeek: number | null;
+  toWeek: number | null;
+  toParentId: number | null;
+}
+
+export interface AddedTopic {
+  title: string;
+  week: number | null;
+  parentId: number | null;
+  /** Index in `added` of a parent that is also new. */
+  parentIndex: number | null;
+}
+
+export interface OutlineDiff {
+  unchanged: TopicRef[];
+  renamed: RenamedTopic[];
+  moved: MovedTopic[];
+  added: AddedTopic[];
+  removed: TopicRef[];
+  restored: TopicRef[];
+}
+
+/** The student says this archived topic is really that added entry. */
+export interface Pairing {
+  removedId: number;
+  addedIndex: number;
+}
+
+export interface OutlineDecisions {
+  renamed: RenamedTopic[];
+  moved: MovedTopic[];
+  added: AddedTopic[];
+  removed: number[];
+  restored: number[];
+  pairings: Pairing[];
+}
+
+export interface OutlineUpdate {
+  id: number;
+  createdAt: string;
+  added: number;
+  removed: number;
+  renamed: number;
+  moved: number;
 }
 
 export interface QueueCounts {

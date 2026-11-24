@@ -56,6 +56,13 @@ pub fn run() {
             commands::topic_delete,
             commands::topic_reorder,
             commands::topic_nudge,
+            commands::topic_archive,
+            commands::topic_restore,
+            commands::topics_archived,
+            commands::topic_set_coverage,
+            commands::outline_diff,
+            commands::outline_apply,
+            commands::outline_history,
             commands::setting_get,
             commands::setting_set,
             // Phase 2

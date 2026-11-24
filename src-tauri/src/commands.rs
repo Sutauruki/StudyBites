@@ -2,7 +2,9 @@
 
 use crate::state::{to_ipc, AppState, Status, LOCK_FAILED, NOT_ACTIVATED};
 use std::sync::MutexGuard;
+use studybites_core::outline::{self, OutlineDecisions, OutlineDiff, OutlineUpdate};
 use studybites_core::{subjects, topics, Db, NewTopic, Subject, Topic};
+use studybites_core::ai::SchemeEntry;
 use tauri::State;
 
 type Ipc<T> = Result<T, String>;
@@ -160,6 +162,69 @@ pub fn topic_reorder(
 pub fn topic_nudge(state: State<AppState>, id: i64, delta: i64) -> Ipc<Vec<Topic>> {
     let mut db = lock(&state)?;
     topics::nudge(&mut db, id, delta).map_err(to_ipc)
+}
+
+/// Take a topic out of the outline. Its notes and cards stay on the device,
+/// out of the way, and `topic_restore` brings it back.
+#[tauri::command]
+pub fn topic_archive(state: State<AppState>, id: i64) -> Ipc<Topic> {
+    let db = lock(&state)?;
+    topics::archive(&db, id).map_err(to_ipc)
+}
+
+#[tauri::command]
+pub fn topic_restore(state: State<AppState>, id: i64) -> Ipc<Topic> {
+    let db = lock(&state)?;
+    topics::restore(&db, id).map_err(to_ipc)
+}
+
+#[tauri::command]
+pub fn topics_archived(state: State<AppState>, subject_id: i64) -> Ipc<Vec<Topic>> {
+    let db = lock(&state)?;
+    topics::list_archived(&db, subject_id).map_err(to_ipc)
+}
+
+/// `unknown`, `taught` (in class) or `self` (self-studied).
+#[tauri::command]
+pub fn topic_set_coverage(state: State<AppState>, id: i64, coverage: String) -> Ipc<Topic> {
+    let db = lock(&state)?;
+    topics::set_coverage(&db, id, &coverage).map_err(to_ipc)
+}
+
+// ---- outline updates ----------------------------------------------------
+
+/// What a re-imported or edited outline changes. Reads only; nothing is
+/// written until `outline_apply`.
+#[tauri::command]
+pub fn outline_diff(
+    state: State<AppState>,
+    subject_id: i64,
+    entries: Vec<SchemeEntry>,
+) -> Ipc<OutlineDiff> {
+    let db = lock(&state)?;
+    outline::diff_outline(&db, subject_id, &entries).map_err(to_ipc)
+}
+
+/// Apply the accepted parts of a diff in one transaction.
+#[tauri::command]
+pub fn outline_apply(
+    state: State<AppState>,
+    subject_id: i64,
+    decisions: OutlineDecisions,
+) -> Ipc<Vec<Topic>> {
+    let mut db = lock(&state)?;
+    outline::apply_outline_update(&mut db, subject_id, &decisions).map_err(to_ipc)
+}
+
+/// The short history behind "Outline last updated …".
+#[tauri::command]
+pub fn outline_history(
+    state: State<AppState>,
+    subject_id: i64,
+    limit: Option<i64>,
+) -> Ipc<Vec<OutlineUpdate>> {
+    let db = lock(&state)?;
+    outline::history(&db, subject_id, limit.unwrap_or(10)).map_err(to_ipc)
 }
 
 // ---- settings -----------------------------------------------------------

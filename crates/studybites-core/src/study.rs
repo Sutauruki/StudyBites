@@ -61,6 +61,7 @@ pub fn due_counts(db: &Db, subject_id: Option<i64>) -> Result<DueCounts> {
           LEFT JOIN materials m ON m.id = n.material_id
           LEFT JOIN scheme_topics t ON t.id = c.topic_id
          WHERE c.retired = 0
+           AND (t.id IS NULL OR t.archived_at IS NULL)
            AND (?1 IS NULL OR m.subject_id = ?1 OR t.subject_id = ?1)";
 
     let mut stmt = db.conn().prepare(sql)?;
@@ -199,6 +200,7 @@ fn select_cards(
            LEFT JOIN materials m ON m.id = n.material_id
            LEFT JOIN scheme_topics t ON t.id = c.topic_id
           WHERE c.retired = 0 AND {filter}
+            AND (t.id IS NULL OR t.archived_at IS NULL)
             AND (?1 IS NULL OR m.subject_id = ?1 OR t.subject_id = ?1)
           ORDER BY {order}
           LIMIT ?2"
@@ -434,6 +436,7 @@ pub fn end_session(db: &Db, session_id: i64) -> Result<SessionSummary> {
            LEFT JOIN materials m ON m.id = n.material_id
            LEFT JOIN scheme_topics t ON t.id = c.topic_id
           WHERE c.retired = 0
+            AND (t.id IS NULL OR t.archived_at IS NULL)
             AND s.due <= strftime('%Y-%m-%dT%H:%M:%fZ','now','+1 day')
             AND (?1 IS NULL OR m.subject_id = ?1 OR t.subject_id = ?1)",
         [subject_id],
@@ -479,6 +482,7 @@ pub fn mastery_for_subject(db: &Db, subject_id: i64) -> Result<Vec<TopicMastery>
            LEFT JOIN cards c ON c.topic_id = t.id AND c.retired = 0
            LEFT JOIN card_state s ON s.card_id = c.id
           WHERE t.subject_id = ?1
+            AND t.archived_at IS NULL
           GROUP BY t.id, t.title
           ORDER BY t.parent_id IS NOT NULL, t.position, t.id",
     )?;
