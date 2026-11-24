@@ -24,17 +24,22 @@ import type {
   LicenseStatus,
   ManagedAiStatus,
   MarkOutcome,
+  OutlineDecisions,
+  OutlineDiff,
+  OutlineUpdate,
   QueueStatus,
   SchemeEntry,
   SessionSummary,
   StudySession,
   Subject,
   Topic,
+  TopicCoverage,
   TopicMastery,
   TopicMatch,
   TopicPatch,
   UpdateStatus,
 } from "./types";
+import { diffOutline, normalizeTitle } from "./mockOutline";
 
 /**
  * Browser-only stand-in for the Rust backend (Brief 11.3), so the UI can be
@@ -57,6 +62,17 @@ interface Rows {
   notes: Note[];
   cards: Array<Card & { due: number; isNewCard: boolean }>;
   sessions: MockSession[];
+  outlineUpdates: OutlineUpdateRow[];
+}
+
+interface OutlineUpdateRow {
+  id: number;
+  subjectId: number;
+  createdAt: string;
+  added: number;
+  removed: number;
+  renamed: number;
+  moved: number;
 }
 
 interface MockSession {
@@ -80,13 +96,24 @@ const empty = (): Rows => ({
   notes: [],
   cards: [],
   sessions: [],
+  outlineUpdates: [],
 });
 
 function read(): Rows {
   try {
     const raw = localStorage.getItem(STORE_KEY);
     // Merge with `empty()` so data saved before Phase 2 still loads.
-    return raw ? { ...empty(), ...(JSON.parse(raw) as Rows) } : empty();
+    if (!raw) return empty();
+    const merged: Rows = { ...empty(), ...(JSON.parse(raw) as Rows) };
+    // Rows saved before outline updates have no archive or coverage fields;
+    // an undefined `archivedAt` would read as "archived", so it is filled in.
+    merged.topics = merged.topics.map((topic) => ({
+      ...topic,
+      archivedAt: topic.archivedAt ?? null,
+      coverage: topic.coverage ?? ("unknown" as TopicCoverage),
+    }));
+    merged.outlineUpdates = merged.outlineUpdates ?? [];
+    return merged;
   } catch {
     return empty();
   }
@@ -114,7 +141,9 @@ const MAX_TITLE = 200;
 function withCount(rows: Rows, subject: Omit<Subject, "topicCount">): Subject {
   return {
     ...subject,
-    topicCount: rows.topics.filter((t) => t.subjectId === subject.id).length,
+    topicCount: rows.topics.filter(
+      (t) => t.subjectId === subject.id && t.archivedAt === null,
+    ).length,
   };
 }
 
@@ -143,8 +172,55 @@ function compact(rows: Rows, subjectId: number, parentId: number | null): void {
   });
 }
 
+/** Hide a topic and its subtopics, mirroring `topics::archive`. */
+function stampArchived(rows: Rows, id: number): void {
+  const now = new Date().toISOString();
+  rows.topics
+    .filter((topic) => topic.id === id || topic.parentId === id)
+    .forEach((topic) => {
+      if (topic.archivedAt === null) topic.archivedAt = now;
+    });
+}
+
+/** Bring an archived topic and its subtopics back. */
+function forgetArchived(rows: Rows, id: number): void {
+  rows.topics
+    .filter((topic) => topic.id === id || topic.parentId === id)
+    .forEach((topic) => {
+      topic.archivedAt = null;
+    });
+}
+
+/** Insert a topic at the end of its sibling group, like `outline::insert_topic`. */
+function makeTopic(
+  rows: Rows,
+  subjectId: number,
+  parentId: number | null,
+  title: string,
+  week: number | null,
+): Omit<Topic, "children"> {
+  if (week !== null && (week < 1 || week > 104)) throw "Week must be between 1 and 104";
+  const topic: Omit<Topic, "children"> = {
+    id: rows.nextId++,
+    subjectId,
+    parentId,
+    title,
+    week,
+    position: siblings(rows, subjectId, parentId).length,
+    isOffScheme: false,
+    supportsTopicId: null,
+    isPreview: false,
+    archivedAt: null,
+    coverage: "unknown",
+  };
+  rows.topics.push(topic);
+  return topic;
+}
+
 function tree(rows: Rows, subjectId: number): Topic[] {
-  const all = rows.topics.filter((t) => t.subjectId === subjectId);
+  const all = rows.topics.filter(
+    (t) => t.subjectId === subjectId && t.archivedAt === null,
+  );
   const roots = all
     .filter((t) => t.parentId === null)
     .sort((a, b) => a.position - b.position || a.id - b.id)
@@ -188,7 +264,7 @@ function mockMcqs(subjectIds: number[]): MockMcq[] {
   return state.cards.flatMap((card) => {
     if (card.payload.kind !== "mcq") return [];
     const topic = state.topics.find((t) => t.id === card.topicId);
-    if (!topic || !subjectIds.includes(topic.subjectId)) return [];
+    if (!topic || topic.archivedAt !== null || !subjectIds.includes(topic.subjectId)) return [];
     return [
       {
         cardId: card.id,
@@ -417,7 +493,7 @@ export const mockBackend: Backend = {
       if (parent.parentId !== null) throw "Topics can only be nested one level deep";
     }
 
-    const topic = {
+    const topic: Omit<Topic, "children"> = {
       id: rows.nextId++,
       subjectId: input.subjectId,
       parentId,
@@ -427,6 +503,8 @@ export const mockBackend: Backend = {
       isOffScheme: input.isOffScheme ?? false,
       supportsTopicId: null,
       isPreview: false,
+      archivedAt: null,
+      coverage: "unknown",
     };
     rows.topics.push(topic);
     write(rows);
@@ -486,6 +564,44 @@ export const mockBackend: Backend = {
     });
     write(rows);
     return tick(tree(rows, topic.subjectId));
+  },
+
+  topicArchive: (id) => {
+    const rows = read();
+    const topic = findTopic(rows, id);
+    stampArchived(rows, id);
+    write(rows);
+    return tick({ ...topic, children: [] });
+  },
+
+  topicRestore: (id) => {
+    const rows = read();
+    const topic = findTopic(rows, id);
+    forgetArchived(rows, id);
+    write(rows);
+    return tick({ ...topic, children: [] });
+  },
+
+  topicsArchived: (subjectId) => {
+    const rows = read();
+    findSubject(rows, subjectId);
+    return tick(
+      rows.topics
+        .filter((t) => t.subjectId === subjectId && t.archivedAt !== null)
+        .sort((a, b) => a.position - b.position || a.id - b.id)
+        .map((t) => ({ ...t, children: [] })),
+    );
+  },
+
+  topicSetCoverage: (id, coverage) => {
+    const rows = read();
+    const topic = findTopic(rows, id);
+    if (coverage !== "unknown" && coverage !== "taught" && coverage !== "self") {
+      throw "Coverage must be unknown, taught or self";
+    }
+    topic.coverage = coverage;
+    write(rows);
+    return tick({ ...topic, children: [] });
   },
 
   settingGet: (key) => tick(read().settings[key] ?? null),
@@ -675,35 +791,148 @@ export const mockBackend: Backend = {
     const rows = read();
     for (const entry of entries) {
       if (!entry.title.trim()) continue;
-      const parent = {
-        id: rows.nextId++,
-        subjectId,
-        parentId: null,
-        title: entry.title.trim(),
-        week: entry.week,
-        position: siblings(rows, subjectId, null).length,
-        isOffScheme: false,
-        supportsTopicId: null,
-        isPreview: false,
-      };
-      rows.topics.push(parent);
+      const parent = makeTopic(rows, subjectId, null, entry.title.trim(), entry.week);
       for (const sub of entry.subtopics ?? []) {
         if (!sub.trim()) continue;
-        rows.topics.push({
-          id: rows.nextId++,
-          subjectId,
-          parentId: parent.id,
-          title: sub.trim(),
-          week: null,
-          position: siblings(rows, subjectId, parent.id).length,
-          isOffScheme: false,
-          supportsTopicId: null,
-          isPreview: false,
-        });
+        makeTopic(rows, subjectId, parent.id, sub.trim(), null);
       }
     }
     write(rows);
     return tick(tree(rows, subjectId));
+  },
+
+  outlineDiff: (subjectId, entries) => {
+    const rows = read();
+    findSubject(rows, subjectId);
+    const topics = rows.topics.filter((t) => t.subjectId === subjectId);
+    return tick<OutlineDiff>(diffOutline(topics, entries));
+  },
+
+  outlineApply: (subjectId, decisions: OutlineDecisions) => {
+    const rows = read();
+    findSubject(rows, subjectId);
+    const addedByTitle = new Map<string, number>();
+    const consumed = new Set<number>();
+    const pairRenames: Array<{ id: number; title: string }> = [];
+    let added = 0;
+    let renamed = 0;
+    let moved = 0;
+
+    decisions.paired.forEach((pair) => {
+      const entry = decisions.added[pair.added];
+      if (!entry) throw "A paired row is not in the list of added topics";
+      findTopic(rows, pair.removedId);
+      pairRenames.push({ id: pair.removedId, title: entry.title });
+      consumed.add(pair.added);
+    });
+
+    // New topics first, so a move can name one as its parent below.
+    decisions.added.forEach((entry, index) => {
+      if (consumed.has(index)) return;
+      const title = cleanName(entry.title, "Topic title", MAX_TITLE);
+      if (entry.parentId !== null) {
+        const parent = findTopic(rows, entry.parentId);
+        if (parent.parentId !== null) throw "Topics can only be nested one level deep";
+      }
+      const topic = makeTopic(rows, subjectId, entry.parentId, title, entry.week);
+      added += 1;
+      if (!addedByTitle.has(normalizeTitle(title))) {
+        addedByTitle.set(normalizeTitle(title), topic.id);
+      }
+      (entry.subtopics ?? []).forEach((sub) => {
+        const subTitle = cleanName(sub, "Topic title", MAX_TITLE);
+        const child = makeTopic(rows, subjectId, topic.id, subTitle, null);
+        added += 1;
+        if (!addedByTitle.has(normalizeTitle(subTitle))) {
+          addedByTitle.set(normalizeTitle(subTitle), child.id);
+        }
+      });
+    });
+
+    decisions.restored.forEach((id) => {
+      findTopic(rows, id);
+      forgetArchived(rows, id);
+    });
+
+    pairRenames.forEach((pair) => {
+      findTopic(rows, pair.id).title = cleanName(pair.title, "Topic title", MAX_TITLE);
+      renamed += 1;
+    });
+
+    decisions.renamed.forEach((rename) => {
+      findTopic(rows, rename.id).title = cleanName(rename.title, "Topic title", MAX_TITLE);
+      renamed += 1;
+    });
+
+    decisions.moved.forEach((decision) => {
+      const topic = findTopic(rows, decision.id);
+      const currentParent = topic.parentId;
+      let parentId = currentParent;
+      if (decision.toRoot) {
+        if (currentParent !== null) {
+          const children = rows.topics.filter((t) => t.parentId === decision.id);
+          if (children.length > 0) throw "A topic with subtopics cannot become a subtopic";
+          parentId = null;
+        }
+      } else if (decision.toParent !== undefined && decision.toParent !== null) {
+        const parent = findTopic(rows, decision.toParent);
+        if (parent.parentId !== null) throw "Topics can only be nested one level deep";
+        parentId = parent.id;
+      } else if (decision.toParentTitle) {
+        const found = addedByTitle.get(normalizeTitle(decision.toParentTitle));
+        if (found === undefined) {
+          throw `"${decision.toParentTitle}" is not part of this update`;
+        }
+        parentId = found;
+      }
+      const week = decision.clearWeek ? null : (decision.week ?? topic.week);
+      if (week !== null && (week < 1 || week > 104)) {
+        throw "Week must be between 1 and 104";
+      }
+      topic.week = week;
+      if (parentId !== currentParent) {
+        const position = siblings(rows, subjectId, parentId).length;
+        topic.parentId = parentId;
+        topic.position = position;
+      }
+      moved += 1;
+    });
+
+    decisions.archived.forEach((id) => {
+      findTopic(rows, id);
+      stampArchived(rows, id);
+    });
+
+    rows.outlineUpdates.push({
+      id: rows.nextId++,
+      subjectId,
+      createdAt: new Date().toISOString(),
+      added,
+      removed: decisions.archived.length,
+      renamed,
+      moved,
+    });
+    write(rows);
+    return tick(tree(rows, subjectId));
+  },
+
+  outlineHistory: (subjectId) => {
+    const rows = read();
+    findSubject(rows, subjectId);
+    return tick<OutlineUpdate[]>(
+      rows.outlineUpdates
+        .filter((update) => update.subjectId === subjectId)
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id - a.id)
+        .slice(0, 20)
+        .map(({ id, createdAt, added, removed, renamed, moved }) => ({
+          id,
+          createdAt,
+          added,
+          removed,
+          renamed,
+          moved,
+        })),
+    );
   },
   explain: () =>
     tick<ExplainResult>({
@@ -827,7 +1056,7 @@ export const mockBackend: Backend = {
     const rows = read();
     return tick<TopicMastery[]>(
       rows.topics
-        .filter((t) => t.subjectId === subjectId)
+        .filter((t) => t.subjectId === subjectId && t.archivedAt === null)
         .map((t) => {
           const mine = rows.cards.filter((c) => c.topicId === t.id);
           const studied = mine.filter((c) => !c.isNewCard).length;
@@ -972,11 +1201,14 @@ function hasSupportedImageMagic(page: Uint8Array): boolean {
   return jpeg || png || webp;
 }
 
-/** Cards belonging to a subject, through their topic. */
+/** Cards belonging to a subject, through their topic. Archived topics are
+ *  excluded exactly as the Rust session and CBT selection excludes them. */
 function cardsFor(rows: Rows, subjectId: number | null) {
   if (subjectId === null) return rows.cards;
   const topicIds = new Set(
-    rows.topics.filter((t) => t.subjectId === subjectId).map((t) => t.id),
+    rows.topics
+      .filter((t) => t.subjectId === subjectId && t.archivedAt === null)
+      .map((t) => t.id),
   );
   return rows.cards.filter((c) => c.topicId !== null && topicIds.has(c.topicId));
 }
@@ -988,7 +1220,7 @@ function cardsFor(rows: Rows, subjectId: number | null) {
  */
 function seedCards(rows: Rows, subjectId: number | null): Rows {
   if (subjectId === null || cardsFor(rows, subjectId).length > 0) return rows;
-  const topic = rows.topics.find((t) => t.subjectId === subjectId);
+  const topic = rows.topics.find((t) => t.subjectId === subjectId && t.archivedAt === null);
   if (!topic) return rows;
 
   const samples: Card["payload"][] = [

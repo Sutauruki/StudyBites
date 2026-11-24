@@ -19,8 +19,15 @@ export interface Topic {
   isOffScheme: boolean;
   supportsTopicId: number | null;
   isPreview: boolean;
+  /** Set when an outline update archived this topic; hidden while set. */
+  archivedAt: string | null;
+  /** What the student said about how they met this topic. */
+  coverage: TopicCoverage;
   children: Topic[];
 }
+
+/** "taught" is in class, "self" is studied alone, "unknown" is not set. */
+export type TopicCoverage = "unknown" | "taught" | "self";
 
 export interface NewTopic {
   subjectId: number;
@@ -191,6 +198,11 @@ export interface Backend extends Phase2Backend {
   ): Promise<Topic[]>;
   topicNudge(id: number, delta: number): Promise<Topic[]>;
 
+  topicArchive(id: number): Promise<Topic>;
+  topicRestore(id: number): Promise<Topic>;
+  topicsArchived(subjectId: number): Promise<Topic[]>;
+  topicSetCoverage(id: number, coverage: TopicCoverage): Promise<Topic>;
+
   settingGet(key: string): Promise<string | null>;
   settingSet(key: string, value: string): Promise<void>;
   dndStatus(): Promise<DndStatus>;
@@ -340,6 +352,101 @@ export interface SchemeEntry {
   subtopics: string[];
 }
 
+/** A stored topic as the outline diff refers to it. */
+export interface OutlineTopicRef {
+  id: number;
+  title: string;
+  week: number | null;
+  parentId: number | null;
+}
+
+export interface OutlineRename {
+  id: number;
+  old: string;
+  new: string;
+}
+
+export interface OutlineMove {
+  id: number;
+  /** The topic's title, for the Changes screen. */
+  title: string;
+  fromWeek: number | null;
+  toWeek: number | null;
+  fromParent: number | null;
+  toParent: number | null;
+  /** Set when the new parent is itself being added in this update. */
+  toParentTitle: string | null;
+}
+
+/** A topic the incoming outline has and the stored one does not. */
+export interface OutlineAdded {
+  title: string;
+  week: number | null;
+  parentId: number | null;
+  /** The parent's title, so the screen can say where the subtopic goes. */
+  parentTitle: string | null;
+  subtopics: string[];
+}
+
+export interface OutlineDiff {
+  unchanged: OutlineTopicRef[];
+  renamed: OutlineRename[];
+  moved: OutlineMove[];
+  added: OutlineAdded[];
+  removed: OutlineTopicRef[];
+  restored: OutlineTopicRef[];
+}
+
+export interface OutlineAddDecision {
+  title: string;
+  week: number | null;
+  parentId: number | null;
+  subtopics: string[];
+}
+
+export interface OutlineRenameDecision {
+  id: number;
+  title: string;
+}
+
+export interface OutlineMoveDecision {
+  id: number;
+  /** Leave out to keep the current week. */
+  week?: number | null;
+  /** `week: null` would read as "leave it", so clearing is an explicit flag. */
+  clearWeek?: boolean;
+  toParent?: number | null;
+  /** Move under a parent created by this same update. */
+  toParentTitle?: string | null;
+  toRoot?: boolean;
+}
+
+/** A removed row the student says is really an added row, renamed. */
+export interface OutlinePairing {
+  removedId: number;
+  /** Index into `added`. */
+  added: number;
+}
+
+export interface OutlineDecisions {
+  added: OutlineAddDecision[];
+  renamed: OutlineRenameDecision[];
+  moved: OutlineMoveDecision[];
+  archived: number[];
+  restored: number[];
+  paired: OutlinePairing[];
+}
+
+/** One applied outline update, for the "outline last updated" history. */
+export interface OutlineUpdate {
+  id: number;
+  createdAt: string;
+  added: number;
+  removed: number;
+  renamed: number;
+  moved: number;
+}
+
 export interface QueueCounts {
   queued: number;
   running: number;
@@ -438,6 +545,9 @@ export interface Phase2Backend {
   topicSuggest(subjectId: number, text: string): Promise<TopicMatch>;
   schemeParse(text: string): Promise<SchemeEntry[]>;
   schemeSave(subjectId: number, entries: SchemeEntry[]): Promise<Topic[]>;
+  outlineDiff(subjectId: number, entries: SchemeEntry[]): Promise<OutlineDiff>;
+  outlineApply(subjectId: number, decisions: OutlineDecisions): Promise<Topic[]>;
+  outlineHistory(subjectId: number): Promise<OutlineUpdate[]>;
   explain(subjectId: number, question: string): Promise<ExplainResult>;
 
   dueCounts(subjectId: number | null): Promise<DueCounts>;
