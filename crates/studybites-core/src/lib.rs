@@ -22,6 +22,7 @@ pub mod license;
 pub mod marking;
 pub mod migrations;
 pub mod models;
+pub mod outline;
 pub mod preview;
 pub mod prompts;
 pub mod providers;
