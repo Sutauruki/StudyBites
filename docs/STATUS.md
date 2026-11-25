@@ -1,9 +1,9 @@
 ## In progress
 
 Task: page references (roadmap item 6). Branch `feature/page-references`.
-Done: Part A (AGENTS/CLAUDE push rule, roadmap split, status note). Parts B1-B6: page extraction, page-aware chunking, migration 009, note page ranges, SourceRef/CardSource through the Rust core and IPC, the Source line in study and CBT review, and the From your notes chips.
-Next: Part C Rust tests, then Part D docs and the PR.
-Blockers: none. Rust checks run only in CI on this laptop.
+Done: Part A, Parts B1-B6, and Part C Rust unit tests (extract_pages, chunk_pages, migration 009 on populated DB, retrieve_notes with pages/NULL/previews, photo-note chunk pages, ExplainResult serialization).
+Next: Part D (README, DECISIONS, ROADMAP, STATUS handoff report, PR, and CI verification).
+Blockers: none. Rust checks run in CI.
 
 === STUDYBITES HANDOFF REPORT ===
 Task: C — Android app-state recovery | Status: done

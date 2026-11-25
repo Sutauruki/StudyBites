@@ -68,6 +68,12 @@ fn latest_migration_preserves_existing_data() {
         [],
     )
     .unwrap();
+    conn.execute(
+        "INSERT INTO notes(material_id, topic_id, content_json, embedding, is_preview)
+         VALUES (1, 1, '{\"title\":\"Sets\"}', X'0000803F', 0)",
+        [],
+    )
+    .unwrap();
 
     migrations::migrate(&mut conn).unwrap();
 
@@ -112,6 +118,13 @@ fn latest_migration_preserves_existing_data() {
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .unwrap();
+    let (page_start, page_end): (Option<u32>, Option<u32>) = conn
+        .query_row(
+            "SELECT page_start, page_end FROM notes WHERE id = 1",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
 
     assert_eq!(subject_name, "MTH 101");
     assert_eq!(session_count, 1);
@@ -121,6 +134,8 @@ fn latest_migration_preserves_existing_data() {
     assert_eq!(material_count, 1);
     assert_eq!(archived_at, None);
     assert_eq!(coverage, "unknown");
+    assert_eq!(page_start, None);
+    assert_eq!(page_end, None);
 }
 
 #[test]
