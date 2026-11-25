@@ -49,10 +49,14 @@ jobs:
             exit 1
           fi
 
+      # A KV namespace id is 32 lowercase hex characters. Checking the shape,
+      # rather than one forgotten placeholder string, also catches a truncated
+      # or mistyped id before wrangler fails on it.
       - name: Check KV namespace is configured
         run: |
-          if grep -q "SET_USAGE_KV_NAMESPACE_ID" wrangler.toml; then
-            echo "::error::Create a KV namespace named USAGE in Cloudflare and paste its id into workers/ai-proxy/wrangler.toml"
+          id="$(sed -n 's/^[[:space:]]*id[[:space:]]*=[[:space:]]*"\(.*\)".*$/\1/p' wrangler.toml | head -n 1)"
+          if ! printf '%s' "$id" | grep -Eq '^[0-9a-f]{32}$'; then
+            echo "::error::Set the USAGE KV namespace id in workers/ai-proxy/wrangler.toml to the 32-character id Cloudflare shows for the namespace named USAGE (found: '${id}')."
             exit 1
           fi
 

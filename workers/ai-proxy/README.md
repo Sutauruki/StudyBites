@@ -11,7 +11,9 @@ independent device lock.
 
 1. Create a Cloudflare account with Workers and Workers KV enabled. In the
    Cloudflare dashboard, create a KV namespace named `USAGE`, then copy its ID
-   into `wrangler.toml` as the binding `id` and commit that non-secret ID.
+   into `wrangler.toml` as the binding `id` and commit that non-secret ID. The
+   id is 32 lowercase hex characters; the deploy workflow refuses anything else
+   (an unset placeholder, a truncated id, a name typed in by mistake).
 2. Set these GitHub Actions secrets:
    - `CLOUDFLARE_API_TOKEN` with Workers and KV edit permissions
    - `CLOUDFLARE_ACCOUNT_ID`
