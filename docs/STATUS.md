@@ -1,3 +1,10 @@
+## In progress
+
+Task: page references (roadmap item 6). Branch `feature/page-references`.
+Done: nothing yet — starting Part A (housekeeping).
+Next: Part A docs, then B1–B6, then tests, then the PR.
+Blockers: none. Rust checks run only in CI on this laptop.
+
 === STUDYBITES HANDOFF REPORT ===
 Task: C — Android app-state recovery | Status: done
 Branch and last commit: ccr-cd109432-nnvymz 2ce8193 | CI: not run

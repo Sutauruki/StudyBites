@@ -12,6 +12,8 @@ LOCAL MACHINE (low-end Windows laptop, slow internet, no Rust installed):
 
 WORKFLOW: work on a branch, never push to main; small commits; open a PR; read the CI result before calling a task done. Never claim a check passed unless you ran it or CI shows it passed.
 
+Push after every commit. Keep a short "## In progress" note at the top of docs/STATUS.md and update it at the end of every part (done, next, blockers), so a new agent can resume if the previous one is cut off.
+
 NEVER commit secrets: no API keys, no keystore (.jks/.p12), no license private key. No AI key goes inside the app: users paste their own, or it lives as a Worker secret.
 
 At the end of every task, APPEND the handoff report from docs/WORKING_RULES.md to docs/STATUS.md (newest last; this overrides the "replace" wording there).
