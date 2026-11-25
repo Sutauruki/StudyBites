@@ -1,8 +1,8 @@
 ## In progress
 
 Task: page references (roadmap item 6). Branch `feature/page-references`.
-Done: nothing yet — starting Part A (housekeeping).
-Next: Part A docs, then B1–B6, then tests, then the PR.
+Done: Part A (AGENTS/CLAUDE push rule, roadmap split, status note). Parts B1-B6: page extraction, page-aware chunking, migration 009, note page ranges, SourceRef/CardSource through the Rust core and IPC, the Source line in study and CBT review, and the From your notes chips.
+Next: Part C Rust tests, then Part D docs and the PR.
 Blockers: none. Rust checks run only in CI on this laptop.
 
 === STUDYBITES HANDOFF REPORT ===
