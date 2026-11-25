@@ -38,6 +38,10 @@ and offline study use no AI and are uncapped.
 Cloudflare Pages, Workers, D1, and R2; Better Auth with Google sign-in; Paystack.
 PDF text extraction and photo resizing happen in the browser.
 
+The web version is one roadmap item of its own (item 14). The managed AI Worker
+is a separate item (item 13): it is built and deployed, and live verification is
+still pending. Neither depends on the other shipping first.
+
 ## Licensing automation
 
 The app sends a request code and email to a Worker. The Worker creates a Paystack
