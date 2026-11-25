@@ -26,6 +26,8 @@ pub struct SessionCard {
     /// Which subject this card belongs to. A session can span subjects, and
     /// typing answers is a per-subject choice, so the card has to carry it.
     pub subject_id: Option<i64>,
+    /// The file and page the card came from, for the "Source:" line.
+    pub source: library::CardSource,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -141,6 +143,13 @@ fn session_card_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Option<Ses
         is_new: row.get::<_, i64>("fsrs_state")? == 0,
         topic_title: row.get("topic_title")?,
         subject_id: row.get("subject_id")?,
+        source: library::CardSource {
+            material_id: row.get("material_id")?,
+            material_name: row.get("material_name")?,
+            page_start: row.get("page_start")?,
+            page_end: row.get("page_end")?,
+            is_preview: row.get::<_, i64>("is_preview")? != 0,
+        },
         card: Card {
             id: row.get("id")?,
             note_id: row.get("note_id")?,
@@ -193,7 +202,9 @@ fn select_cards(
 
     let sql = format!(
         "SELECT c.*, t.title AS topic_title, s.state AS fsrs_state,
-                COALESCE(m.subject_id, t.subject_id) AS subject_id
+                COALESCE(m.subject_id, t.subject_id) AS subject_id,
+                m.id AS material_id, m.original_filename AS material_name,
+                n.page_start, n.page_end
            FROM cards c
            JOIN card_state s ON s.card_id = c.id
            LEFT JOIN notes n ON n.id = c.note_id
@@ -239,7 +250,9 @@ pub fn resume_session(db: &Db, session_id: i64) -> Result<Option<Session>> {
 
     let mut stmt = db.conn().prepare(
         "SELECT c.*, t.title AS topic_title, s.state AS fsrs_state,
-                COALESCE(m.subject_id, t.subject_id) AS subject_id
+                COALESCE(m.subject_id, t.subject_id) AS subject_id,
+                m.id AS material_id, m.original_filename AS material_name,
+                n.page_start, n.page_end
            FROM session_cards sc
            JOIN cards c ON c.id = sc.card_id
            JOIN card_state s ON s.card_id = c.id
@@ -500,15 +513,78 @@ pub fn mastery_for_subject(db: &Db, subject_id: i64) -> Result<Vec<TopicMastery>
     Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
 }
 
+/// A note the answer was drawn from, with the name of the file it came from.
+///
+/// The name is looked up here rather than in the UI so a citation can never
+/// show a note from another material: retrieval already scoped the note to the
+/// subject, and the material comes from the note's own row.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RetrievedNote {
+    pub note: library::Note,
+    /// `None` for an AI preview, which came from no file of the student's.
+    pub material_name: Option<String>,
+}
+
+impl RetrievedNote {
+    pub fn source_ref(&self) -> SourceRef {
+        SourceRef {
+            note_id: self.note.id,
+            title: self.note.content.title.clone(),
+            material_id: self.note.material_id,
+            material_name: self.material_name.clone(),
+            page_start: self.note.page_start,
+            page_end: self.note.page_end,
+            is_preview: self.note.is_preview,
+        }
+    }
+}
+
+/// One line under an answer: which note it used, and where to check it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceRef {
+    pub note_id: i64,
+    /// The note's own title, which is what the student would search for.
+    pub title: String,
+    pub material_id: Option<i64>,
+    /// `None` for an AI preview.
+    pub material_name: Option<String>,
+    #[serde(default)]
+    pub page_start: Option<u32>,
+    #[serde(default)]
+    pub page_end: Option<u32>,
+    /// True when the note was written by the AI without the student's file.
+    pub is_preview: bool,
+}
+
+/// An answer and the notes it was drawn from (Brief 3.8).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExplainResult {
+    pub answer: String,
+    pub sources: Vec<SourceRef>,
+}
+
 /// Notes most similar to a question, within one subject (Brief 3.8).
 pub fn retrieve_notes(
     db: &Db,
     subject_id: i64,
     query_vector: &[f32],
     k: usize,
-) -> Result<Vec<library::Note>> {
+) -> Result<Vec<RetrievedNote>> {
     let candidates = library::note_vectors_for_subject(db, subject_id)?;
     let matches = crate::embed::top_k(query_vector, &candidates, k);
     let ids: Vec<i64> = matches.iter().map(|m| m.id).collect();
-    library::notes_by_ids(db, &ids)
+    let notes = library::notes_by_ids(db, &ids)?;
+    Ok(notes
+        .into_iter()
+        .map(|note| {
+            let material_name = note.material_id.and_then(|id| {
+                library::material_get(db, id)
+                    .ok()
+                    .map(|material| material.original_filename)
+            });
+            RetrievedNote { note, material_name }
+        })
+        .collect())
 }

@@ -231,6 +231,18 @@ pub const MIGRATIONS: &[&str] = &[
     );
     CREATE INDEX idx_outline_updates_subject ON outline_updates(subject_id, created_at);
     "#,
+    // ---- 009: page references (roadmap item 6) ---------------------------
+    // A note remembers which page of its material it came from, so an answer
+    // can say "Biology.pdf, pp. 3-5" and the student can check it.
+    //
+    // Both columns are nullable on purpose. Notes made before this migration
+    // have no page to claim, DOCX and text files have no pages at all, and an
+    // AI preview comes from no material. A missing number is honest; a guessed
+    // one would send the student to the wrong page.
+    r#"
+    ALTER TABLE notes ADD COLUMN page_start INTEGER;
+    ALTER TABLE notes ADD COLUMN page_end   INTEGER;
+    "#,
 ];
 
 pub const SCHEMA_VERSION: i64 = MIGRATIONS.len() as i64;

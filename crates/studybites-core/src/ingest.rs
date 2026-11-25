@@ -41,6 +41,12 @@ pub struct DistillJob {
     pub chunk_total: usize,
     #[serde(default)]
     pub source: DistillSource,
+    /// Pages this chunk came from. Defaulted rather than required: a job queued
+    /// by an older build is still on the device after an update and must run.
+    #[serde(default)]
+    pub page_start: Option<u32>,
+    #[serde(default)]
+    pub page_end: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -75,10 +81,14 @@ pub fn accept_upload(
 ) -> Result<Accepted> {
     let subject = crate::subjects::get(db, subject_id)?;
     let path = std::path::Path::new(filename);
-    let extracted = crate::files::extract_from_bytes(path, bytes)?;
+    // Pages first: the chunks carry the page they came from, and that is what
+    // the answer shows the student later.
+    let kind = crate::files::FileKind::detect(path, bytes)?;
+    let pages = crate::files::extract_pages(bytes, kind)?;
+    let sha256 = crate::files::sha256_hex(bytes);
 
     // Re-uploading the same file must cost nothing (Brief 6).
-    if let Some(existing) = library::material_by_hash(db, subject_id, &extracted.sha256)? {
+    if let Some(existing) = library::material_by_hash(db, subject_id, &sha256)? {
         return Ok(Accepted {
             chunk_count: 0,
             duplicate_of: Some(existing.id),
@@ -86,21 +96,21 @@ pub fn accept_upload(
         });
     }
 
-    let cold_path = crate::files::cold_store(app_data, file_key, &extracted.sha256, bytes)?;
+    let cold_path = crate::files::cold_store(app_data, file_key, &sha256, bytes)?;
     let material = library::material_create(
         db,
         &NewMaterial {
             subject_id,
             topic_id,
             original_filename: filename,
-            mime: extracted.kind.mime(),
-            size: extracted.size as i64,
-            sha256: &extracted.sha256,
+            mime: kind.mime(),
+            size: bytes.len() as i64,
+            sha256: &sha256,
             cold_path: Some(&cold_path),
         },
     )?;
 
-    let chunks = chunk::chunk_text(&extracted.text);
+    let chunks = chunk::chunk_pages(&pages);
     if chunks.is_empty() {
         library::material_set_status(
             db,
@@ -134,6 +144,8 @@ pub fn accept_upload(
                 chunk_index: piece.index,
                 chunk_total: total,
                 source: DistillSource::Document,
+                page_start: piece.page_start,
+                page_end: piece.page_end,
             },
         )?;
     }
@@ -249,17 +261,21 @@ pub fn confirm_transcript(db: &mut Db, material_id: i64) -> Result<usize> {
             "Wait until every page has a transcript before confirming.".into(),
         ));
     }
-    let mut text = String::new();
+    // One page per photo, numbered from 1. The "Page N" line stays in the text
+    // because the model has always seen it and it marks where a page starts;
+    // the number is also carried beside the text so the answer can cite it.
+    let mut pages_text: Vec<crate::files::PageText> = Vec::with_capacity(pages.len());
     for page in &pages {
-        if !text.is_empty() {
-            text.push_str("\n\n");
-        }
-        text.push_str(&format!("Page {}\n", page.page_index + 1));
+        let mut text = format!("Page {}\n", page.page_index + 1);
         if let Some(transcript) = &page.transcript {
             text.push_str(transcript);
         }
+        pages_text.push(crate::files::PageText {
+            page: Some(page.page_index as u32 + 1),
+            text,
+        });
     }
-    let chunks = chunk::chunk_text(&text);
+    let chunks = chunk::chunk_pages(&pages_text);
     if chunks.is_empty() {
         return Err(CoreError::Invalid(
             "Add readable text to at least one page before confirming.".into(),
@@ -286,6 +302,8 @@ pub fn confirm_transcript(db: &mut Db, material_id: i64) -> Result<usize> {
                 chunk_index: piece.index,
                 chunk_total: total,
                 source: DistillSource::StudentNotes,
+                page_start: piece.page_start,
+                page_end: piece.page_end,
             },
         )?;
     }
@@ -372,13 +390,16 @@ pub fn process_one(
     };
 
     let vector = embedder.embed(&distilled.as_plain_text());
-    let note = library::note_create(
+    let note = library::note_create_with_pages(
         db,
         Some(payload.material_id),
         payload.topic_id,
         &distilled,
         &vector,
         false,
+        payload
+            .page_start
+            .map(|start| (start, payload.page_end.unwrap_or(start))),
     )?;
     let added = library::cards_create(db, note.id, payload.topic_id, &cards, false)?;
 

@@ -377,6 +377,12 @@ pub struct Note {
     pub content: DistilledNote,
     pub is_preview: bool,
     pub created_at: String,
+    /// First and last page of the material this note came from, 1-based.
+    /// `None` when the source has no pages or predates page references.
+    #[serde(default)]
+    pub page_start: Option<u32>,
+    #[serde(default)]
+    pub page_end: Option<u32>,
 }
 
 fn row_to_note(row: &Row) -> rusqlite::Result<Note> {
@@ -388,6 +394,8 @@ fn row_to_note(row: &Row) -> rusqlite::Result<Note> {
         content: serde_json::from_str(&json).unwrap_or_default(),
         is_preview: row.get::<_, i64>("is_preview")? != 0,
         created_at: row.get("created_at")?,
+        page_start: row.get("page_start")?,
+        page_end: row.get("page_end")?,
     })
 }
 
@@ -400,16 +408,39 @@ pub fn note_create(
     embedding: &[f32],
     is_preview: bool,
 ) -> Result<Note> {
+    note_create_with_pages(db, material_id, topic_id, note, embedding, is_preview, None)
+}
+
+/// Store a note and the page range of its material that it came from.
+///
+/// `pages` is the range, not a single number: a short page is folded into the
+/// chunk before it, and a note made from both covers both.
+pub fn note_create_with_pages(
+    db: &Db,
+    material_id: Option<i64>,
+    topic_id: Option<i64>,
+    note: &DistilledNote,
+    embedding: &[f32],
+    is_preview: bool,
+    pages: Option<(u32, u32)>,
+) -> Result<Note> {
     let content_json = serde_json::to_string(note)?;
+    let (page_start, page_end) = match pages {
+        Some((start, end)) => (Some(start), Some(end.max(start))),
+        None => (None, None),
+    };
     db.conn().execute(
-        "INSERT INTO notes(material_id, topic_id, content_json, embedding, is_preview)
-         VALUES (?1, ?2, ?3, ?4, ?5)",
+        "INSERT INTO notes(material_id, topic_id, content_json, embedding, is_preview,
+                           page_start, page_end)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
         (
             material_id,
             topic_id,
             &content_json,
             embed::to_blob(embedding),
             i64::from(is_preview),
+            page_start,
+            page_end,
         ),
     )?;
     note_get(db, db.conn().last_insert_rowid())
@@ -469,6 +500,23 @@ pub fn notes_by_ids(db: &Db, ids: &[i64]) -> Result<Vec<Note>> {
 }
 
 // ---- cards --------------------------------------------------------------
+
+/// Where a card came from, for the one muted "Source:" line under it.
+///
+/// Every field is optional because every one of them can genuinely be unknown:
+/// an AI preview came from no file of the student's, a DOCX has no pages, and a
+/// card made before page references existed has no number to show. The UI shows
+/// whatever is known and never invents the rest.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CardSource {
+    pub material_id: Option<i64>,
+    pub material_name: Option<String>,
+    pub page_start: Option<u32>,
+    pub page_end: Option<u32>,
+    /// True for an AI preview card, which is not from the student's material.
+    pub is_preview: bool,
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

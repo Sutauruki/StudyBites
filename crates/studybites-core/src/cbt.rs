@@ -23,6 +23,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::ai::GeneratedCard;
 use crate::error::{CoreError, Result};
+use crate::library::CardSource;
 use crate::Db;
 
 /// Smallest test worth sitting, and a ceiling that keeps one session sane.
@@ -61,6 +62,8 @@ pub struct Marked {
     pub chosen: Option<usize>,
     pub explanation: String,
     pub topic_title: Option<String>,
+    /// The file and page the question came from, so the student can check it.
+    pub source: CardSource,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -184,9 +187,13 @@ pub fn submit(db: &mut Db, test_id: i64, chosen: &[Option<usize>]) -> Result<Tes
     // below can take the connection mutably.
     let loaded = {
         let mut stmt = db.conn().prepare(
-            "SELECT a.position, a.card_id, c.payload_json, t.title AS topic_title
+            "SELECT a.position, a.card_id, c.payload_json, t.title AS topic_title,
+                    m.id AS material_id, m.original_filename AS material_name,
+                    n.page_start, n.page_end
                FROM cbt_answers a
                LEFT JOIN cards c ON c.id = a.card_id
+               LEFT JOIN notes n ON n.id = c.note_id
+               LEFT JOIN materials m ON m.id = n.material_id
                LEFT JOIN scheme_topics t ON t.id = c.topic_id
               WHERE a.test_id = ?1
               ORDER BY a.position",
@@ -197,6 +204,13 @@ pub fn submit(db: &mut Db, test_id: i64, chosen: &[Option<usize>]) -> Result<Tes
                     row.get::<_, i64>("position")?,
                     row.get::<_, Option<String>>("payload_json")?,
                     row.get::<_, Option<String>>("topic_title")?,
+                    CardSource {
+                        material_id: row.get("material_id")?,
+                        material_name: row.get("material_name")?,
+                        page_start: row.get("page_start")?,
+                        page_end: row.get("page_end")?,
+                        is_preview: false,
+                    },
                 ))
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -207,7 +221,7 @@ pub fn submit(db: &mut Db, test_id: i64, chosen: &[Option<usize>]) -> Result<Tes
     let mut answers = Vec::with_capacity(loaded.len());
     let mut score = 0;
 
-    for (position, payload_json, topic_title) in loaded {
+    for (position, payload_json, topic_title, source) in loaded {
         // A card deleted between starting and submitting is skipped rather
         // than failing the whole test.
         let Some(payload) = payload_json else {
@@ -248,6 +262,7 @@ pub fn submit(db: &mut Db, test_id: i64, chosen: &[Option<usize>]) -> Result<Tes
             chosen: picked,
             explanation,
             topic_title,
+            source,
         });
     }
 
