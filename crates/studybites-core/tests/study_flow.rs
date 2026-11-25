@@ -1196,7 +1196,9 @@ fn retrieval_stays_inside_one_subject() {
     let query = embedder.embed("mitochondria energy cells");
     let found = study::retrieve_notes(&db, maths.id, &query, 5).unwrap();
     assert!(
-        found.iter().all(|n| n.note.topic_id == Some(maths_topic.id)),
+        found
+            .iter()
+            .all(|n| n.note.topic_id == Some(maths_topic.id)),
         "retrieval must never cross subjects"
     );
 

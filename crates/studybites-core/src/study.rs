@@ -584,7 +584,10 @@ pub fn retrieve_notes(
                     .ok()
                     .map(|material| material.original_filename)
             });
-            RetrievedNote { note, material_name }
+            RetrievedNote {
+                note,
+                material_name,
+            }
         })
         .collect())
 }
