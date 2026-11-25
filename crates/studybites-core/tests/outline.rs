@@ -9,7 +9,7 @@ use studybites_core::ai::{DistilledNote, GeneratedCard, SchemeEntry};
 use studybites_core::db::DEV_KEY;
 use studybites_core::embed::{Embedder, LexicalEmbedder};
 use studybites_core::library::{self, NewMaterial};
-use studybites_core::outline::{self, OutlineDecisions, RenameDecision};
+use studybites_core::outline::{self, MoveDecision, OutlineDecisions, RenameDecision};
 use studybites_core::{cbt, study, subjects, topics, Db, NewTopic};
 
 fn db() -> Db {
@@ -160,6 +160,49 @@ fn a_removed_topic_is_archived_and_its_cards_are_only_hidden() {
     topics::restore(&db, root).unwrap();
     assert_eq!(study::due_counts(&db, Some(subject_id)).unwrap().new, 3);
     assert_eq!(cbt::available(&db, &[subject_id]).unwrap(), 3);
+}
+
+#[test]
+fn a_failed_update_leaves_every_topic_and_link_untouched() {
+    let mut db = db();
+    let subject_id = subjects::create(&db, "PHY 101").unwrap().id;
+    let root = topic(&db, subject_id, "Optics");
+    let file = material(&db, subject_id, root);
+    let note_id = note(&db, Some(file), root);
+
+    // The rename is valid; the move names a topic that does not exist, so the
+    // whole update must roll back — including the rename.
+    let decisions = OutlineDecisions {
+        renamed: vec![RenameDecision {
+            id: root,
+            title: "Optics and waves".into(),
+        }],
+        moved: vec![MoveDecision {
+            id: 99_999,
+            week: Some(3),
+            clear_week: false,
+            to_parent: None,
+            to_parent_title: None,
+            to_root: false,
+        }],
+        ..Default::default()
+    };
+    assert!(outline::apply_outline_update(&mut db, subject_id, &decisions).is_err());
+
+    let tree = topics::list_tree(&db, subject_id).unwrap();
+    assert_eq!(tree.len(), 1);
+    assert_eq!(tree[0].id, root);
+    // The rename was rolled back with everything else.
+    assert_eq!(tree[0].title, "Optics");
+    assert_eq!(
+        library::material_get(&db, file).unwrap().topic_id,
+        Some(root)
+    );
+    assert_eq!(
+        library::note_get(&db, note_id).unwrap().topic_id,
+        Some(root)
+    );
+    assert!(outline::history(&db, subject_id).unwrap().is_empty());
 }
 
 #[test]
