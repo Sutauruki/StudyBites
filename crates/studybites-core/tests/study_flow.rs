@@ -1302,7 +1302,10 @@ fn retrieve_notes_returns_material_pages_null_old_notes_and_preview_labels() {
         .unwrap()
         .source_ref();
     assert_eq!(paged_ref.material_name.as_deref(), Some("Biology.pdf"));
-    assert_eq!((paged_ref.page_start, paged_ref.page_end), (Some(3), Some(5)));
+    assert_eq!(
+        (paged_ref.page_start, paged_ref.page_end),
+        (Some(3), Some(5))
+    );
     assert!(!paged_ref.is_preview);
 
     let old_ref = found
