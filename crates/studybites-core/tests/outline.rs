@@ -7,9 +7,10 @@
 
 use studybites_core::ai::{DistilledNote, GeneratedCard, SchemeEntry};
 use studybites_core::db::DEV_KEY;
+use studybites_core::embed::{Embedder, LexicalEmbedder};
 use studybites_core::library::{self, NewMaterial};
 use studybites_core::outline::{self, OutlineDecisions, RenameDecision};
-use studybites_core::{cbt, study, subjects, topics, Db, LexicalEmbedder, NewTopic};
+use studybites_core::{cbt, study, subjects, topics, Db, NewTopic};
 
 fn db() -> Db {
     Db::open_in_memory(DEV_KEY).expect("open in-memory db")
