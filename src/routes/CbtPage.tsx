@@ -9,6 +9,7 @@ import {
 } from "../api";
 import { Banner, Empty, Loading, Modal } from "../components/ui";
 import { Screen } from "../components/Screen";
+import { sourceLine } from "../lib/pages";
 
 type Stage =
   | { name: "setup" }
@@ -522,6 +523,7 @@ function Review({ result, onAgain }: { result: CbtResult; onAgain: () => void })
 
               {answer.chosen === null && <p className="muted">You left this one blank.</p>}
               {answer.explanation && <p className="review__why">{answer.explanation}</p>}
+              {sourceLine(answer.source) && <p className="muted">{sourceLine(answer.source)}</p>}
             </article>
           ))}
         </div>

@@ -5,6 +5,7 @@ import type {
   BugReport,
   BugReportResult,
   Card,
+  CardSource,
   DueCounts,
   DndMode,
   DndStatus,
@@ -30,6 +31,7 @@ import type {
   QueueStatus,
   SchemeEntry,
   SessionSummary,
+  SourceRef,
   StudySession,
   Subject,
   Topic,
@@ -252,11 +254,73 @@ interface MockMcq {
   explanation: string;
   subjectName: string | null;
   topicTitle: string | null;
+  source: CardSource;
 }
 
 let mockTestId = 0;
 const mockPapers: Record<number, MockMcq[]> = {};
 const mockHistory: CbtSummary[] = [];
+
+/**
+ * Where a card came from, derived the way the Rust core derives it: the note's
+ * own material and pages, never the card's topic.
+ *
+ * Every field stays null when it is genuinely unknown — an AI preview came
+ * from no file, and a card from before page references has no number.
+ */
+function sourceFor(rows: Rows, card: Card): CardSource {
+  const note =
+    card.noteId === null ? undefined : rows.notes.find((item) => item.id === card.noteId);
+  if (card.isPreview || !note) {
+    return {
+      materialId: null,
+      materialName: null,
+      pageStart: null,
+      pageEnd: null,
+      isPreview: card.isPreview,
+    };
+  }
+  const material =
+    note.materialId === null
+      ? undefined
+      : rows.materials.find((item) => item.id === note.materialId);
+  return {
+    materialId: material?.id ?? null,
+    materialName: material?.originalFilename ?? null,
+    pageStart: note.pageStart ?? null,
+    pageEnd: note.pageEnd ?? null,
+    isPreview: false,
+  };
+}
+
+/** One citation line for the Ask answer area. */
+function sourceRefFor(rows: Rows, note: Note): SourceRef {
+  const material =
+    note.materialId === null
+      ? undefined
+      : rows.materials.find((item) => item.id === note.materialId);
+  return {
+    noteId: note.id,
+    title: note.content.title,
+    materialId: material?.id ?? null,
+    materialName: material?.originalFilename ?? null,
+    pageStart: note.pageStart ?? null,
+    pageEnd: note.pageEnd ?? null,
+    isPreview: note.isPreview,
+  };
+}
+
+/** Retrieval is scoped to one subject, by material or by topic, as in Rust. */
+function noteIsInSubject(rows: Rows, note: Note, subjectId: number): boolean {
+  const material =
+    note.materialId === null
+      ? undefined
+      : rows.materials.find((item) => item.id === note.materialId);
+  if (material?.subjectId === subjectId) return true;
+  const topic =
+    note.topicId === null ? undefined : rows.topics.find((item) => item.id === note.topicId);
+  return topic?.subjectId === subjectId;
+}
 
 /** Every multiple-choice card the preview data holds for these subjects. */
 function mockMcqs(subjectIds: number[]): MockMcq[] {
@@ -274,6 +338,7 @@ function mockMcqs(subjectIds: number[]): MockMcq[] {
         explanation: card.payload.explanation,
         subjectName: state.subjects.find((s) => s.id === topic.subjectId)?.name ?? null,
         topicTitle: topic.title,
+        source: sourceFor(state, card),
       },
     ];
   });
@@ -379,6 +444,7 @@ export const mockBackend: Backend = {
       chosen: chosen[i] ?? null,
       explanation: p.explanation,
       topicTitle: p.topicTitle,
+      source: p.source,
     }));
     const score = answers.filter((a) => a.chosen === a.correct).length;
     const total = answers.length;
@@ -762,6 +828,9 @@ export const mockBackend: Backend = {
       topicId: material.topicId,
       isPreview: false,
       createdAt: new Date().toISOString(),
+      // Photo notes keep the page they were transcribed from, as the core does.
+      pageStart: 1,
+      pageEnd: pages.length,
       content: {
         title: "Mitochondria",
         keyIdeas: ["Mitochondria release energy from glucose."],
@@ -934,12 +1003,20 @@ export const mockBackend: Backend = {
         })),
     );
   },
-  explain: () =>
-    tick<ExplainResult>({
+  explain: (subjectId) => {
+    // There is no AI key in the preview, so the answer is a stand-in — but the
+    // sources are the subject's real notes, so the citation chips can be seen.
+    const rows = read();
+    const sources = rows.notes
+      .filter((note) => noteIsInSubject(rows, note, subjectId))
+      .slice(0, 3)
+      .map((note) => sourceRefFor(rows, note));
+    return tick<ExplainResult>({
       answer:
-        "Explanations need an AI key. In the desktop app this answers from your own notes only.",
-      sources: [],
-    }),
+        "The browser preview has no AI key, so this is a stand-in answer. The desktop build writes the real answer from the notes below.",
+      sources,
+    });
+  },
 
   dueCounts: (subjectId) => {
     const rows = seedCards(read(), subjectId);
@@ -980,8 +1057,9 @@ export const mockBackend: Backend = {
       cards: chosen.map((c) => ({
         card: c,
         isNew: c.isNewCard,
-        topicTitle: read().topics.find((t) => t.id === c.topicId)?.title ?? null,
-        subjectId: subjectId ?? read().topics.find((t) => t.id === c.topicId)?.subjectId ?? null,
+        topicTitle: rows.topics.find((t) => t.id === c.topicId)?.title ?? null,
+        subjectId: subjectId ?? rows.topics.find((t) => t.id === c.topicId)?.subjectId ?? null,
+        source: sourceFor(rows, c),
       })),
     });
   },
@@ -1014,6 +1092,7 @@ export const mockBackend: Backend = {
         topicTitle: rows.topics.find((t) => t.id === c.topicId)?.title ?? null,
         subjectId:
           session.subjectId ?? rows.topics.find((t) => t.id === c.topicId)?.subjectId ?? null,
+        source: sourceFor(rows, c),
       })),
     });
   },
@@ -1234,10 +1313,51 @@ function seedCards(rows: Rows, subjectId: number | null): Rows {
     },
     { kind: "short", prompt: "Sample prompt: say anything, then reveal.", answer: "Any answer." },
   ];
+
+  // A sample file and note, so the "Source:" line has something to show in the
+  // preview. The desktop app derives this from a real upload instead, and its
+  // name is always the file's own.
+  const material: Material = {
+    id: rows.nextId++,
+    subjectId,
+    topicId: topic.id,
+    originalFilename: "Sample material (browser preview).pdf",
+    mime: "application/pdf",
+    size: 0,
+    sha256: `sample-material-${topic.id}`,
+    coldPath: null,
+    uploadedAt: new Date().toISOString(),
+    status: "done",
+    error: null,
+    noteCount: 1,
+    cardCount: samples.length,
+  };
+  rows.materials.push(material);
+  const note: Note = {
+    id: rows.nextId++,
+    materialId: material.id,
+    topicId: topic.id,
+    content: {
+      title: "Sample note",
+      keyIdeas: ["These cards exist only in the browser preview."],
+      definitions: [],
+      formulas: [],
+      workedExamples: [],
+      commonMistakes: [],
+      checkThis: [],
+      aiAdditions: [],
+    },
+    isPreview: false,
+    createdAt: new Date().toISOString(),
+    pageStart: 1,
+    pageEnd: 2,
+  };
+  rows.notes.push(note);
+
   for (const payload of samples) {
     rows.cards.push({
       id: rows.nextId++,
-      noteId: null,
+      noteId: note.id,
       topicId: topic.id,
       payload,
       isPreview: false,
