@@ -22,6 +22,10 @@ use std::path::{Path, PathBuf};
 /// much bigger is a mistake, and would stall the machine.
 pub const MAX_FILE_BYTES: u64 = 64 * 1024 * 1024;
 
+/// The usual cause of an empty PDF, and image support is a later phase, so say
+/// so rather than leaving the student guessing.
+const NO_TEXT_IN_PDF: &str = "no text could be read from that PDF. If it is a scan or photographs of pages, image support is coming in a later version.";
+
 /// What kind of file we were given, decided by content and extension.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FileKind {
@@ -207,6 +211,101 @@ fn extract_pdf(bytes: &[u8]) -> Result<String> {
     }
 }
 
+/// Text extracted from one page, or from a document that has no pages.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PageText {
+    /// 1-based page number. `None` for DOCX and plain text, which have no
+    /// pages, and for a PDF the extractor could not split.
+    pub page: Option<u32>,
+    pub text: String,
+}
+
+/// Pull text out page by page.
+///
+/// PDFs get real page numbers: `pdf-extract` has a per-page entry point, so the
+/// count and order are the document's own. DOCX and plain text have no page
+/// concept here — Word's layout lives in the printer's hands, and a text file
+/// has no pages at all — so they come back as one page with no number, and
+/// references show the material name only.
+///
+/// A PDF the per-page reader rejects falls back to the single-string extractor,
+/// splitting on form feeds if it emitted any; failing that, one unnumbered page.
+pub fn extract_pages(bytes: &[u8], kind: FileKind) -> Result<Vec<PageText>> {
+    match kind {
+        FileKind::Pdf => extract_pdf_pages(bytes),
+        FileKind::Docx => Ok(vec![PageText {
+            page: None,
+            text: extract_docx(bytes)?,
+        }]),
+        FileKind::Text => Ok(vec![PageText {
+            page: None,
+            text: tidy_text(&String::from_utf8_lossy(bytes)),
+        }]),
+    }
+}
+
+fn extract_pdf_pages(bytes: &[u8]) -> Result<Vec<PageText>> {
+    // Same panic guard as the single-string path: pdf-extract panics on some
+    // malformed files, and a bad download must not take the window down.
+    let parsed = std::panic::catch_unwind(|| pdf_extract::extract_text_from_mem_by_pages(bytes));
+    if let Ok(Ok(pages)) = parsed {
+        // The walker numbers pages 1, 2, 3… and stops at the first page it
+        // cannot read, which is why an empty result still falls through to the
+        // whole-document reader below rather than being trusted.
+        let mut out: Vec<PageText> = pages
+            .into_iter()
+            .enumerate()
+            .map(|(index, text)| PageText {
+                page: Some(index as u32 + 1),
+                text: tidy_text(&text),
+            })
+            .collect();
+        // A blank page is real, and dropping it must not renumber the pages
+        // after it: the whole point of the number is the printed page.
+        out.retain(|page| !page.text.trim().is_empty());
+        if !out.is_empty() {
+            return Ok(out);
+        }
+    }
+
+    // Either the walker failed or every page came back blank. The
+    // whole-document extractor is more forgiving, so try it before giving up —
+    // and split on form feeds, which it emits between pages. The split has to
+    // happen before tidying, because collapsing whitespace eats them, and a
+    // document without form feeds keeps one unnumbered page: a guessed page
+    // number would be a wrong citation.
+    let raw = std::panic::catch_unwind(|| pdf_extract::extract_text_from_mem(bytes));
+    let raw = match raw {
+        Ok(Ok(text)) => text,
+        _ => {
+            return Err(CoreError::Invalid(
+                "that PDF could not be read — it may be damaged".into(),
+            ))
+        }
+    };
+    let pieces: Vec<&str> = raw.split('\u{0C}').collect();
+    let out: Vec<PageText> = if pieces.len() > 1 {
+        pieces
+            .into_iter()
+            .enumerate()
+            .map(|(index, piece)| PageText {
+                page: Some(index as u32 + 1),
+                text: tidy_text(piece),
+            })
+            .filter(|page| !page.text.is_empty())
+            .collect()
+    } else {
+        vec![PageText {
+            page: None,
+            text: tidy_text(&raw),
+        }]
+    };
+    if out.is_empty() || out.iter().all(|page| page.text.trim().is_empty()) {
+        return Err(CoreError::Invalid(NO_TEXT_IN_PDF.into()));
+    }
+    Ok(out)
+}
+
 /// Text extracted from one upload.
 #[derive(Debug, Clone)]
 pub struct Extracted {
@@ -227,12 +326,7 @@ pub fn extract_from_bytes(path: &Path, bytes: &[u8]) -> Result<Extracted> {
 
     if text.trim().is_empty() {
         return Err(CoreError::Invalid(match kind {
-            // The usual cause, and image support is a later phase, so say so
-            // rather than leaving the student guessing.
-            FileKind::Pdf => "no text could be read from that PDF. If it is a scan \
-                              or photographs of pages, image support is coming in a \
-                              later version."
-                .to_string(),
+            FileKind::Pdf => NO_TEXT_IN_PDF.to_string(),
             _ => "that file contains no readable text".to_string(),
         }));
     }

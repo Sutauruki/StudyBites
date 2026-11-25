@@ -213,6 +213,11 @@ last updated.
 
 - **Ask about a subject** — answers come only from your own uploaded notes for
   that subject, and the notes used are listed so you can check them.
+- **Page references** in Ask answers, study card reveals, and CBT test reviews —
+  references come from stored note metadata rather than AI guesses: PDFs and
+  photo notes show the material name and page numbers (e.g. `p. 3` or `pp. 3-5`),
+  DOCX/text files and older notes show the material name only, and AI previews
+  are labelled `AI preview, not from your material`.
 - **Progress bars per topic**, from how well the cards have stuck.
 - **Download original** gives back any file you uploaded, byte for byte.
 - **Check for updates** in Settings tells you when a newer build exists. It

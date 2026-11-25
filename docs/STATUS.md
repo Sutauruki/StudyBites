@@ -1,3 +1,10 @@
+## In progress
+
+Task: page references (roadmap item 6). Branch `feature/page-references`.
+Done: Parts A, B1-B6, C, and D (docs, decisions, roadmap `[~]`, handoff report).
+Next: Open PR and verify CI passes.
+Blockers: none. Rust checks run in CI; device checklist pending.
+
 === STUDYBITES HANDOFF REPORT ===
 Task: C — Android app-state recovery | Status: done
 Branch and last commit: ccr-cd109432-nnvymz 2ce8193 | CI: not run
@@ -310,5 +317,42 @@ Branch and last commit: feature/outline-updates, this commit | CI: to be confirm
  - Remaining parts of this task: the seven device checks, and PART B needs the real KV namespace id.
  - Roadmap status: items 1, 2, 3, 4, 5, 11, 13 [~]; items 6-10, 12, 14-19 [ ].
  - Suggested next step: run the device checklist, then merge once CI is green.
+READY FOR NEXT: yes
+=== END REPORT ===
+
+=== STUDYBITES HANDOFF REPORT ===
+Task: Page references (roadmap item 6) | Status: partly done
+Branch and last commit: feature/page-references 0aa2a1e | CI: pending on Part D push
+1. What I did (one line per change):
+ - AGENTS.md, CLAUDE.md (edited / new): added push-per-commit and In-progress rule; added @AGENTS.md.
+ - docs/ROADMAP.md, docs/PRODUCT_PLAN.md (edited): split Managed AI Worker (13, [~]) and Web version (14, [ ]), renumbered items 13-20, and marked item 6 [~].
+ - crates/studybites-core/src/files.rs, chunk.rs, lib.rs (edited): added PageText, extract_pages (pdf-extract per-page with form-feed fallback; DOCX/TXT unnumbered), and chunk_pages with #[serde(default)] page_start/page_end.
+ - crates/studybites-core/src/migrations.rs, ingest.rs, library.rs, study.rs, cbt.rs (edited): added migration 009 (nullable notes.page_start/page_end), DistillJob page fields, photo-note chunk page ranges, RetrievedNote material_name/pages, SourceRef/ExplainResult, and CardSource on session and CBT cards.
+ - src-tauri/src/phase2.rs (edited): updated explain IPC to return ExplainResult with SourceRef.
+ - src/lib/pages.ts (new), src/api/types.ts, mock.ts (edited), src/routes/StudyPage.tsx, CbtPage.tsx, SubjectPage.tsx (edited), src/styles/app.css (edited): added formatPages/sourceLine/citationLabel, muted Source line in study reveal and CBT review, and "From your notes" chips in Ask.
+ - crates/studybites-core/tests/storage.rs, pipeline.rs, study_flow.rs (edited): added tests for extract_pages, chunk_pages, migration 009 on populated DB, retrieve_notes (pages, NULL old notes, previews), photo-note chunk pages, and ExplainResult serialization.
+ - README.md, docs/DECISIONS.md (D49-D51), docs/STATUS.md (edited): documented page references, design decisions, and handoff report.
+2. Checks I ran (command and result):
+ - npm run typecheck: PASSED
+ - npm run build:web: PASSED
+ - git diff --check: PASSED
+ - Rust fmt, check, clippy, cargo test --workspace: NOT RUN locally (no Rust toolchain on Windows laptop; run by GitHub CI).
+3. Not verified:
+ - Device checklist (section 6) on a real device.
+4. Where I changed or went beyond the prompt, and why:
+ - Ask "From your notes" chips are text-only (no standalone note viewer exists yet; logged as D49).
+5. Problems, risks and anything I guessed:
+ - None; PDFs without per-page or form-feed boundaries fall back to one unnumbered page (D50).
+6. What the developer must do or test now (device checklist, verified or not verified):
+ 1 upload a PDF: NOT VERIFIED
+ 2 ask a question in Ask and see chips with material name and pages: NOT VERIFIED
+ 3 finish a practice test and see a source line in the review: NOT VERIFIED
+ 4 an old note shows the material name only: NOT VERIFIED
+ 5 an AI preview note is labelled: NOT VERIFIED
+ 6 photo notes show their page numbers: NOT VERIFIED
+7. What is left:
+ - Remaining parts of this task: device verification of the six items above before marking item 6 [x].
+ - Roadmap status: items 1, 2, 3, 4, 5, 6, 11, 13 [~]; items 7-10, 12, 14-20 [ ].
+ - Suggested next step: verify the six device checks on a build from this branch, then merge the PR once CI is green.
 READY FOR NEXT: yes
 === END REPORT ===

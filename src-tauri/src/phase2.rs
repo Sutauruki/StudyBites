@@ -548,21 +548,13 @@ pub fn outline_history(state: State<AppState>, subject_id: i64) -> Ipc<Vec<Outli
     outline::history(&db, subject_id).map_err(to_ipc)
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ExplainResult {
-    pub answer: String,
-    /// Titles of the notes the answer was drawn from, so the student can check.
-    pub sources: Vec<String>,
-}
-
 /// Explain something, grounded in the student's own notes (Brief 3.8).
 #[tauri::command]
 pub async fn explain(
     state: State<'_, AppState>,
     subject_id: i64,
     question: String,
-) -> Ipc<ExplainResult> {
+) -> Ipc<study::ExplainResult> {
     let question = question.trim().to_string();
     if question.is_empty() {
         return Err("Type a question first.".into());
@@ -579,7 +571,7 @@ pub async fn explain(
         return Err("There are no notes in this subject yet to answer from.".into());
     }
 
-    let contents: Vec<_> = notes.iter().map(|n| n.content.clone()).collect();
+    let contents: Vec<_> = notes.iter().map(|n| n.note.content.clone()).collect();
     let http = UreqHttp;
     let list = require_providers(&state, &http)?;
     let available = available_ids(&state, &list)?;
@@ -590,9 +582,9 @@ pub async fn explain(
         })
         .map_err(describe_attempts)?;
 
-    Ok(ExplainResult {
+    Ok(study::ExplainResult {
         answer,
-        sources: notes.iter().map(|n| n.content.title.clone()).collect(),
+        sources: notes.iter().map(study::RetrievedNote::source_ref).collect(),
     })
 }
 

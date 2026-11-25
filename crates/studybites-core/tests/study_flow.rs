@@ -793,6 +793,8 @@ fn photo_upload_is_deduplicated_transcribed_and_queued_as_student_notes() {
     );
     assert!(payload.text.contains("My own edited wording stays here."));
     assert!(payload.text.contains("Page 1"));
+    assert_eq!(payload.page_start, Some(1));
+    assert_eq!(payload.page_end, Some(2));
 }
 
 #[test]
@@ -1196,13 +1198,149 @@ fn retrieval_stays_inside_one_subject() {
     let query = embedder.embed("mitochondria energy cells");
     let found = study::retrieve_notes(&db, maths.id, &query, 5).unwrap();
     assert!(
-        found.iter().all(|n| n.topic_id == Some(maths_topic.id)),
+        found
+            .iter()
+            .all(|n| n.note.topic_id == Some(maths_topic.id)),
         "retrieval must never cross subjects"
     );
 
     let bio_found = study::retrieve_notes(&db, biology.id, &query, 5).unwrap();
     assert_eq!(bio_found.len(), 1);
-    assert_eq!(bio_found[0].content.title, "Cells");
+    assert_eq!(bio_found[0].note.content.title, "Cells");
+}
+
+#[test]
+fn retrieve_notes_returns_material_pages_null_old_notes_and_preview_labels() {
+    let db = db();
+    let bio = subjects::create(&db, "BIO 101").unwrap();
+    let topic = topics::create(
+        &db,
+        &NewTopic {
+            subject_id: bio.id,
+            title: "Cell division".into(),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let embedder = LexicalEmbedder;
+
+    let pdf_mat = library::material_create(
+        &db,
+        &library::NewMaterial {
+            subject_id: bio.id,
+            topic_id: Some(topic.id),
+            original_filename: "Biology.pdf",
+            mime: "application/pdf",
+            size: 100,
+            sha256: "hash-pdf",
+            cold_path: Some("cold-pdf"),
+        },
+    )
+    .unwrap();
+    let old_mat = library::material_create(
+        &db,
+        &library::NewMaterial {
+            subject_id: bio.id,
+            topic_id: Some(topic.id),
+            original_filename: "OldHandout.pdf",
+            mime: "application/pdf",
+            size: 100,
+            sha256: "hash-old",
+            cold_path: Some("cold-old"),
+        },
+    )
+    .unwrap();
+
+    let paged_content = DistilledNote {
+        title: "Mitosis phases".into(),
+        key_ideas: vec!["Mitosis divides the nucleus into two daughter nuclei".into()],
+        ..Default::default()
+    };
+    let old_content = DistilledNote {
+        title: "Legacy cell note".into(),
+        key_ideas: vec!["Nucleus division in legacy handout".into()],
+        ..Default::default()
+    };
+    let preview_content = DistilledNote {
+        title: "Meiosis preview".into(),
+        key_ideas: vec!["Nucleus division in preview".into()],
+        ..Default::default()
+    };
+
+    library::note_create_with_pages(
+        &db,
+        Some(pdf_mat.id),
+        Some(topic.id),
+        &paged_content,
+        &embedder.embed(&paged_content.as_plain_text()),
+        false,
+        Some((3, 5)),
+    )
+    .unwrap();
+    library::note_create(
+        &db,
+        Some(old_mat.id),
+        Some(topic.id),
+        &old_content,
+        &embedder.embed(&old_content.as_plain_text()),
+        false,
+    )
+    .unwrap();
+    library::note_create(
+        &db,
+        None,
+        Some(topic.id),
+        &preview_content,
+        &embedder.embed(&preview_content.as_plain_text()),
+        true,
+    )
+    .unwrap();
+
+    let query = embedder.embed("nucleus division mitosis");
+    let found = study::retrieve_notes(&db, bio.id, &query, 5).unwrap();
+    assert_eq!(found.len(), 3);
+
+    let paged_ref = found
+        .iter()
+        .find(|n| n.note.content.title == "Mitosis phases")
+        .unwrap()
+        .source_ref();
+    assert_eq!(paged_ref.material_name.as_deref(), Some("Biology.pdf"));
+    assert_eq!(
+        (paged_ref.page_start, paged_ref.page_end),
+        (Some(3), Some(5))
+    );
+    assert!(!paged_ref.is_preview);
+
+    let old_ref = found
+        .iter()
+        .find(|n| n.note.content.title == "Legacy cell note")
+        .unwrap()
+        .source_ref();
+    assert_eq!(old_ref.material_name.as_deref(), Some("OldHandout.pdf"));
+    assert_eq!((old_ref.page_start, old_ref.page_end), (None, None));
+    assert!(!old_ref.is_preview);
+
+    let preview_ref = found
+        .iter()
+        .find(|n| n.note.content.title == "Meiosis preview")
+        .unwrap()
+        .source_ref();
+    assert_eq!(preview_ref.material_name, None);
+    assert_eq!((preview_ref.page_start, preview_ref.page_end), (None, None));
+    assert!(preview_ref.is_preview);
+
+    let result = study::ExplainResult {
+        answer: "Mitosis splits the nucleus.".into(),
+        sources: vec![paged_ref],
+    };
+    let json = serde_json::to_value(&result).unwrap();
+    assert_eq!(json["answer"], "Mitosis splits the nucleus.");
+    assert_eq!(json["sources"][0]["title"], "Mitosis phases");
+    assert_eq!(json["sources"][0]["materialName"], "Biology.pdf");
+    assert_eq!(json["sources"][0]["pageStart"], 3);
+    assert_eq!(json["sources"][0]["pageEnd"], 5);
+    assert_eq!(json["sources"][0]["isPreview"], false);
 }
 
 #[test]

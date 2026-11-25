@@ -581,3 +581,40 @@ matchable again) means `outline_diff` → Changes screen → `outline_apply`.
 with its counts, which is what the "Outline last updated" line reads. Migration
 008 adds `archived_at`, `coverage` and that table; it is appended, never edited,
 and is covered by a test that migrates a database which already holds data.
+
+## Page references (roadmap item 6)
+
+### D49. Page references come from stored metadata, never from the AI
+
+Ask answers, study card reveals and CBT test reviews show where each note or
+card came from using `notes.page_start`, `notes.page_end` and
+`materials.original_filename` stored during ingestion. The AI prompt is
+unchanged and the model is never asked to cite pages, because a model-generated
+citation can hallucinate a page number.
+
+In the Ask answer area, the "From your notes" chips are text-only (`<span>`
+chips) because StudyBites does not yet have a standalone note-viewer screen to
+jump to.
+
+### D50. PDF page extraction uses `pdf-extract` per-page with form-feed fallback
+
+`files::extract_pages` calls `pdf_extract::extract_text_from_mem_by_pages` under
+a `catch_unwind` guard, numbering pages 1-based and dropping blank pages without
+renumbering later pages. If the per-page walker fails or returns nothing, it
+falls back to `pdf_extract::extract_text_from_mem` split on `\u{0C}` (form
+feed) before text tidying; if no form feeds are present, it returns a single
+unnumbered page (`page: None`) rather than guessing.
+
+`chunk::chunk_pages` chunks one page at a time so citations stay on a single
+page where possible, folding a short page (`< MIN_TOKENS`) into the previous
+chunk from the same numbering kind so the chunk carries a `page_start..=page_end`
+range. Photo notes use the same `chunk_pages` path with 1-based photo order.
+
+### D51. DOCX, plain text, and pre-migration notes carry no page numbers
+
+`FileKind::Docx` and `FileKind::Text` have no fixed page layout, so
+`extract_pages` returns `page: None` for them and the UI shows only the
+material name. Migration 009 adds nullable `notes.page_start` and
+`notes.page_end` columns so pre-existing notes stay `NULL` and show the
+material name only, while AI previews (`material_id = NULL`, `is_preview = 1`)
+display `AI preview, not from your material`.

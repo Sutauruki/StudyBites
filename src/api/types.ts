@@ -144,6 +144,8 @@ export interface CbtMarked {
   chosen: number | null;
   explanation: string;
   topicTitle: string | null;
+  /** The file and page the question came from, for the review list. */
+  source: CardSource;
 }
 
 export interface CbtResult {
@@ -270,6 +272,9 @@ export interface Note {
   content: DistilledNote;
   isPreview: boolean;
   createdAt: string;
+  /** First and last page of the material this note came from, 1-based. */
+  pageStart: number | null;
+  pageEnd: number | null;
 }
 
 export interface Accepted {
@@ -293,12 +298,28 @@ export interface Card {
   createdAt: string;
 }
 
+/**
+ * Where a card came from, for the one muted "Source:" line.
+ *
+ * Every field can be unknown: an AI preview came from no file of the
+ * student's, a DOCX has no pages, and older cards predate page references.
+ * The UI shows what is known and never invents the rest.
+ */
+export interface CardSource {
+  materialId: number | null;
+  materialName: string | null;
+  pageStart: number | null;
+  pageEnd: number | null;
+  isPreview: boolean;
+}
+
 export interface SessionCard {
   card: Card;
   isNew: boolean;
   topicTitle: string | null;
   /** A session can span subjects, and typed answers is a per-subject choice. */
   subjectId: number | null;
+  source: CardSource;
 }
 
 export interface StudySession {
@@ -497,7 +518,19 @@ export interface ManagedAiStatus {
 
 export interface ExplainResult {
   answer: string;
-  sources: string[];
+  sources: SourceRef[];
+}
+
+/** One note an answer was drawn from: the file and page to check it against. */
+export interface SourceRef {
+  noteId: number;
+  title: string;
+  materialId: number | null;
+  /** Null for an AI preview, which came from no file of the student's. */
+  materialName: string | null;
+  pageStart: number | null;
+  pageEnd: number | null;
+  isPreview: boolean;
 }
 
 export interface UpdateStatus {

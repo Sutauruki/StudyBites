@@ -13,6 +13,7 @@ import {
   type TopicMastery,
 } from "../api";
 import { Banner, Empty, Loading, Modal } from "../components/ui";
+import { citationLabel } from "../lib/pages";
 import { SchemeImportDialog } from "./SchemeImportDialog";
 import { UploadDialog } from "./UploadDialog";
 import { PhotoReviewDialog } from "./PhotoReviewDialog";
@@ -859,7 +860,16 @@ function ExplainSection({ subjectId }: { subjectId: number }) {
           <div className="stack selectable" style={{ marginTop: "var(--s-4)" }}>
             <p>{result.answer}</p>
             {result.sources.length > 0 && (
-              <p className="muted">From your notes: {result.sources.join(", ")}</p>
+              <div className="stack" style={{ gap: "var(--s-2)" }}>
+                <span className="label">From your notes</span>
+                <div className="row">
+                  {result.sources.map((source) => (
+                    <span key={source.noteId} className="chip chip--cite">
+                      {citationLabel(source)}
+                    </span>
+                  ))}
+                </div>
+              </div>
             )}
           </div>
         )}

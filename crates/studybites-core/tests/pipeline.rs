@@ -1,8 +1,9 @@
 //! Phase 2 foundations: chunking, AI response parsing, the job queue, quota.
 
 use studybites_core::ai::{self, AiError, GeneratedCard, ProviderId};
-use studybites_core::chunk::{chunk_text, estimate_tokens, MAX_TOKENS};
+use studybites_core::chunk::{chunk_pages, chunk_text, estimate_tokens, MAX_TOKENS};
 use studybites_core::db::DEV_KEY;
+use studybites_core::files::{extract_pages, FileKind, PageText};
 use studybites_core::providers::Provider;
 use studybites_core::{jobs, quota, Db, JobStatus};
 
@@ -103,6 +104,103 @@ fn chunking_does_not_split_multibyte_characters() {
     for chunk in &chunks {
         assert!(chunk.text.chars().count() > 0);
     }
+}
+
+fn minimal_two_page_pdf(page1_text: &str, page2_text: &str) -> Vec<u8> {
+    let stream1 = format!("BT /F1 12 Tf 72 720 Td ({page1_text}) Tj ET");
+    let stream2 = format!("BT /F1 12 Tf 72 720 Td ({page2_text}) Tj ET");
+    let objects = [
+        "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n".to_string(),
+        "2 0 obj\n<< /Type /Pages /Kids [3 0 R 5 0 R] /Count 2 >>\nendobj\n".to_string(),
+        "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 7 0 R >> >> >>\nendobj\n".to_string(),
+        format!(
+            "4 0 obj\n<< /Length {} >>\nstream\n{stream1}\nendstream\nendobj\n",
+            stream1.len()
+        ),
+        "5 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 6 0 R /Resources << /Font << /F1 7 0 R >> >> >>\nendobj\n".to_string(),
+        format!(
+            "6 0 obj\n<< /Length {} >>\nstream\n{stream2}\nendstream\nendobj\n",
+            stream2.len()
+        ),
+        "7 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n".to_string(),
+    ];
+
+    let mut pdf = b"%PDF-1.4\n".to_vec();
+    let mut offsets = Vec::with_capacity(objects.len());
+    for obj in &objects {
+        offsets.push(pdf.len());
+        pdf.extend_from_slice(obj.as_bytes());
+    }
+    let xref_offset = pdf.len();
+    pdf.extend_from_slice(
+        format!("xref\n0 {}\n0000000000 65535 f \n", objects.len() + 1).as_bytes(),
+    );
+    for offset in offsets {
+        pdf.extend_from_slice(format!("{offset:010} 00000 n \n").as_bytes());
+    }
+    pdf.extend_from_slice(
+        format!(
+            "trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF\n",
+            objects.len() + 1
+        )
+        .as_bytes(),
+    );
+    pdf
+}
+
+#[test]
+fn extract_pages_reads_multipage_pdf_and_leaves_plain_text_unnumbered() {
+    let pdf = minimal_two_page_pdf("Alpha page one", "Beta page two");
+    let pages = extract_pages(&pdf, FileKind::Pdf).unwrap();
+    assert_eq!(pages.len(), 2);
+    assert_eq!(pages[0].page, Some(1));
+    assert!(pages[0].text.contains("Alpha page one"));
+    assert_eq!(pages[1].page, Some(2));
+    assert!(pages[1].text.contains("Beta page two"));
+
+    let txt = extract_pages(b"Plain notes without pages.", FileKind::Text).unwrap();
+    assert_eq!(txt.len(), 1);
+    assert_eq!(txt[0].page, None);
+    assert_eq!(txt[0].text, "Plain notes without pages.");
+}
+
+#[test]
+fn chunk_pages_tracks_single_page_spanned_pages_and_unnumbered_docs() {
+    let pages = vec![
+        PageText {
+            page: Some(1),
+            text: paragraph("cell", 90),
+        },
+        PageText {
+            page: Some(2),
+            text: paragraph("mitosis", 90),
+        },
+        PageText {
+            page: Some(3),
+            text: "Short summary.".into(),
+        },
+    ];
+    let chunks = chunk_pages(&pages);
+    assert_eq!(chunks.len(), 2);
+    assert_eq!(
+        (chunks[0].page_start, chunks[0].page_end),
+        (Some(1), Some(1))
+    );
+    assert_eq!(
+        (chunks[1].page_start, chunks[1].page_end),
+        (Some(2), Some(3))
+    );
+    assert!(chunks[1].text.contains("Short summary."));
+
+    let unnumbered = chunk_pages(&[PageText {
+        page: None,
+        text: paragraph("unnumbered", 90),
+    }]);
+    assert_eq!(unnumbered.len(), 1);
+    assert_eq!(
+        (unnumbered[0].page_start, unnumbered[0].page_end),
+        (None, None)
+    );
 }
 
 // ---- AI response parsing ------------------------------------------------

@@ -12,6 +12,7 @@ import {
 import { Banner, Empty, Loading } from "../components/ui";
 import { Screen } from "../components/Screen";
 import { clearResume, saveResume, type ResumeStudy } from "../lib/resume";
+import { sourceLine } from "../lib/pages";
 
 type Phase = "loading" | "studying" | "finished";
 
@@ -409,6 +410,9 @@ export function StudyPage({
           }}
         />
         {revealed && outcome && <MarkPanel outcome={outcome} />}
+        {revealed && sourceLine(current.source) && (
+          <p className="muted">{sourceLine(current.source)}</p>
+        )}
       </div>
 
       {!revealed && writeIn ? (

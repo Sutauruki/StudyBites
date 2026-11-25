@@ -33,7 +33,7 @@ pub mod topics;
 pub mod update;
 
 pub use ai::{AiError, AiProvider, DistilledNote, GeneratedCard, ProviderId};
-pub use chunk::{chunk_text, Chunk};
+pub use chunk::{chunk_pages, chunk_text, Chunk};
 pub use crypto::{DeviceKeys, SecretKey};
 pub use db::{Db, Key};
 pub use device::DeviceProfile;

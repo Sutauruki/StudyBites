@@ -359,6 +359,9 @@ select.input { cursor: pointer; }
 }
 .chip--accent { background: var(--accent-soft); border-color: var(--accent-border); color: var(--accent); }
 .chip--ok { background: var(--ok-soft); border-color: transparent; color: var(--ok); }
+/* A citation can be long ("Cell division, Biology.pdf, pp. 3-5"), so it wraps
+   rather than pushing the page sideways on a phone. */
+.chip--cite { white-space: normal; overflow-wrap: anywhere; line-height: 1.4; }
 
 /* ---- empty states, banners ------------------------------------------- */
 
