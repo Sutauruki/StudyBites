@@ -1520,3 +1520,157 @@ kbd {
   .cbt__grid { grid-template-columns: repeat(6, minmax(32px, 1fr)); padding: 12px; }
   .cbt__cell { min-height: 40px; }
 }
+
+/* ---- outline updates -------------------------------------------------
+   The "taught in class" / "self-studied" menu, the archived list and the
+   Changes screen for a re-imported scheme of work. */
+
+.outline-head {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s-2);
+}
+
+.outline-head .link {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.outline-history {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  width: 100%;
+}
+
+.outline-history__row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s-3);
+  margin: 0;
+  font-size: var(--fs-sm);
+}
+
+.outline__menu { position: relative; display: inline-block; }
+
+.outline__menu-button {
+  cursor: pointer;
+  list-style: none;
+}
+
+.outline__menu-button::-webkit-details-marker { display: none; }
+
+.outline__menu-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 180px;
+  padding: var(--s-2);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
+}
+
+.outline__menu-panel .btn {
+  justify-content: flex-start;
+  min-height: 40px;
+  text-align: left;
+}
+
+.changes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+}
+
+.change-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+}
+
+.change-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-3);
+  min-height: 44px;
+  padding: var(--s-2) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.change-row--removed {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  padding: var(--s-2) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.change-row--removed .change-row {
+  min-height: 0;
+  padding: 0;
+  border-bottom: 0;
+}
+
+.change-row input[type="checkbox"] {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  margin: 2px 0 0;
+}
+
+.change-row__main {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.change-row__title {
+  font-size: var(--fs-sm);
+  overflow-wrap: anywhere;
+}
+
+.change-row__subs {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.change-row__pair { max-width: 220px; }
+
+.changes__unchanged { margin: 0; }
+
+.changes__summary {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--text);
+}
+
+@media (max-width: 600px) {
+  .outline__actions .btn { min-height: 44px; }
+
+  .outline__menu-panel {
+    min-width: 200px;
+    right: auto;
+    left: 0;
+  }
+
+  .outline__menu-panel .btn { min-height: 44px; }
+
+  .change-row__pair {
+    flex: 1 1 100%;
+    max-width: 100%;
+    min-height: 44px;
+  }
+
+  .outline-history__row { flex-direction: column; gap: 2px; }
+}
+

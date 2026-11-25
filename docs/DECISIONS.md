@@ -522,3 +522,62 @@ Worker tests previously ran only inside the deploy workflows, which execute on
 The deploy workflow also refuses to deploy while `wrangler.toml` still holds
 the `SET_USAGE_KV_NAMESPACE_ID` placeholder. It is a literal string check, not a
 validity check: it catches the forgotten step, not a wrong id.
+
+## Outline updates (roadmap item 5)
+
+### D45. A topic id never changes, and an outline update never deletes
+
+`materials`, `notes` and `cards` point at `scheme_topics(id)` with
+`ON DELETE SET NULL`. Deleting a topic therefore does not fail: it quietly
+detaches every note and card filed under it, which looks like data loss with no
+error to explain it. So an update renames, moves, archives or restores — it
+never deletes. `archived_at` hides a topic (and its subtopics) while the id and
+every link stay intact, and `Restore` simply clears the stamp.
+
+Permanent deletion exists only for a topic already in the Archived list, behind
+a confirmation that says its notes and cards will lose their topic. That is the
+honest description of what the foreign key does.
+
+### D46. Outline matching is deterministic and offline, and refuses to guess
+
+Comparing two schemes of work is a matching problem, not a language problem, so
+it gets no AI call and no clock: the same two outlines produce the same diff on
+every device and in the browser mock. Titles are compared after
+`normalize` (lowercase, collapsed spaces, leading numbering and bullets
+removed). Two titles are the same topic when their token sets have a Jaccard
+similarity of at least 0.8, or when they are at most two characters and a
+quarter of the length apart.
+
+Anything bolder is reported as an addition plus a removal instead of being
+forced into a rename. That is deliberate: a wrong automatic rename would carry
+a term's cards onto the wrong topic, while a wrong addition and removal pair is
+one click to fix with **Same as…**. The manual pairing is also how a student
+keeps progress through a genuinely large rename.
+
+Parents are matched first, subtopic overlap breaks ties, then subtopics are
+matched inside matched parents, then leftover subtopics are matched across
+parents so that a subtopic moved under another topic is a move rather than a
+remove-plus-add. One stored topic is never matched twice, and an empty import
+proposes nothing: a failed parse must not archive a whole outline.
+
+### D47. Archived topics are hidden from study, tests, previews and counts
+
+Every query that selects cards for studying (sessions, resumes, due counts, the
+session summary), builds a CBT test, offers a preview, lists topics, or counts
+progress now excludes cards and topics whose topic is archived. The cards
+themselves are untouched, so restoring a topic brings them straight back. The
+alternative — leaving them in rotation — would keep asking a student about a
+topic the lecturer has removed from the course.
+
+### D48. `save_scheme` is now only for a subject with no topics
+
+Saving a parsed scheme with `save_scheme` always inserts topics, so using it on
+a subject that already has an outline would duplicate everything. The import
+dialog therefore branches: no stored topics means the original save flow;
+any stored topic (archived ones included, because an archived topic must be
+matchable again) means `outline_diff` → Changes screen → `outline_apply`.
+
+`outline_apply` runs in one transaction and records one `outline_updates` row
+with its counts, which is what the "Outline last updated" line reads. Migration
+008 adds `archived_at`, `coverage` and that table; it is appended, never edited,
+and is covered by a test that migrates a database which already holds data.

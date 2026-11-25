@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type MouseEvent, type ReactNode } from "react";
 import {
   backend,
   errorText,
@@ -6,8 +6,10 @@ import {
   type ExplainResult,
   type Material,
   type Note,
+  type OutlineUpdate,
   type Subject,
   type Topic,
+  type TopicCoverage,
   type TopicMastery,
 } from "../api";
 import { Banner, Empty, Loading, Modal } from "../components/ui";
@@ -30,6 +32,9 @@ export function SubjectPage({
 }) {
   const [subject, setSubject] = useState<Subject | null>(null);
   const [topics, setTopics] = useState<Topic[] | null>(null);
+  const [archived, setArchived] = useState<Topic[]>([]);
+  const [history, setHistory] = useState<OutlineUpdate[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
   const [materials, setMaterials] = useState<Material[]>([]);
   const [mastery, setMastery] = useState<TopicMastery[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -51,16 +56,20 @@ export function SubjectPage({
 
   const refresh = useCallback(async () => {
     try {
-      const [s, t, m, mastered] = await Promise.all([
+      const [s, t, m, mastered, gone, updates] = await Promise.all([
         backend.subjectGet(subjectId),
         backend.topicsList(subjectId),
         backend.materialsList(subjectId),
         backend.mastery(subjectId),
+        backend.topicsArchived(subjectId),
+        backend.outlineHistory(subjectId),
       ]);
       setSubject(s);
       setTopics(t);
       setMaterials(m);
       setMastery(mastered);
+      setArchived(gone);
+      setHistory(updates);
       setError(null);
     } catch (err) {
       setError(errorText(err));
@@ -137,23 +146,39 @@ export function SubjectPage({
 
       <ExplainSection subjectId={subjectId} />
 
+      {history.length > 0 && (
+        <div className="outline-head">
+          <button className="link" onClick={() => setShowHistory((open) => !open)}>
+            Outline last updated {formatDate(history[0].createdAt)}
+          </button>
+          {showHistory && <OutlineHistory updates={history} />}
+        </div>
+      )}
+
       {topics === null ? (
         <Loading label="Loading the outline…" />
       ) : topics.length === 0 ? (
-        <Empty
-          title="No scheme of work yet"
-          body="Add the topics your lecturer listed, in order, with week numbers if you have them. You can also skip this entirely — topics can be created later as you upload material."
-          action={
-            <div className="row row--wrap" style={{ justifyContent: "center" }}>
-              <button className="btn btn--big" onClick={() => setAdding({ parentId: null })}>
-                Add topics by hand
-              </button>
-              <button className="btn btn--primary btn--big" onClick={() => setImporting(true)}>
-                Import a scheme of work
-              </button>
-            </div>
-          }
-        />
+        archived.length > 0 ? (
+          <p className="muted">
+            Every topic is archived. Restore one below, or import an outline to bring the scheme
+            back.
+          </p>
+        ) : (
+          <Empty
+            title="No scheme of work yet"
+            body="Add the topics your lecturer listed, in order, with week numbers if you have them. You can also skip this entirely — topics can be created later as you upload material."
+            action={
+              <div className="row row--wrap" style={{ justifyContent: "center" }}>
+                <button className="btn btn--big" onClick={() => setAdding({ parentId: null })}>
+                  Add topics by hand
+                </button>
+                <button className="btn btn--primary btn--big" onClick={() => setImporting(true)}>
+                  Import a scheme of work
+                </button>
+              </div>
+            }
+          />
+        )
       ) : (
         <div className="outline">
           {topics.map((topic, index) => (
@@ -167,10 +192,19 @@ export function SubjectPage({
               onAddChild={() => setAdding({ parentId: topic.id })}
               onEdit={setEditing}
               onNudge={(id, delta) => void run(() => backend.topicNudge(id, delta))}
-              onDelete={(id) => void run(() => backend.topicDelete(id))}
+              onCoverage={(id, coverage) => void run(() => backend.topicSetCoverage(id, coverage))}
+              onArchive={(id) => void run(() => backend.topicArchive(id))}
             />
           ))}
         </div>
+      )}
+
+      {archived.length > 0 && (
+        <ArchivedSection
+          topics={archived}
+          onRestore={(id) => void run(() => backend.topicRestore(id))}
+          onDelete={(id) => void run(() => backend.topicDelete(id))}
+        />
       )}
 
       {adding && (
@@ -189,10 +223,10 @@ export function SubjectPage({
       {importing && (
         <SchemeImportDialog
           subjectId={subjectId}
-          hasTopics={(topics ?? []).length > 0}
+          hasTopics={(topics ?? []).length + archived.length > 0}
           onClose={() => setImporting(false)}
-          onSaved={(count) => {
-            setNotice(`Added ${count} topic${count === 1 ? "" : "s"} from your scheme of work.`);
+          onSaved={(message) => {
+            setNotice(message);
             void refresh();
           }}
         />
@@ -249,7 +283,8 @@ function OutlineItem({
   onAddChild,
   onEdit,
   onNudge,
-  onDelete,
+  onCoverage,
+  onArchive,
 }: {
   topic: Topic;
   isFirst: boolean;
@@ -259,7 +294,8 @@ function OutlineItem({
   onAddChild: () => void;
   onEdit: (topic: Topic) => void;
   onNudge: (id: number, delta: number) => void;
-  onDelete: (id: number) => void;
+  onCoverage: (id: number, coverage: TopicCoverage) => void;
+  onArchive: (id: number) => void;
 }) {
   const count = topic.children.length;
 
@@ -271,7 +307,8 @@ function OutlineItem({
         isLast={isLast}
         onEdit={onEdit}
         onNudge={onNudge}
-        onDelete={onDelete}
+        onCoverage={onCoverage}
+        onArchive={onArchive}
         onAddChild={onAddChild}
         toggle={
           <button
@@ -297,7 +334,8 @@ function OutlineItem({
                 isLast={index === count - 1}
                 onEdit={onEdit}
                 onNudge={onNudge}
-                onDelete={onDelete}
+                onCoverage={onCoverage}
+                onArchive={onArchive}
                 toggle={<span className="outline__toggle outline__toggle--empty" />}
               />
             </div>
@@ -314,7 +352,8 @@ function OutlineRow({
   isLast,
   onEdit,
   onNudge,
-  onDelete,
+  onCoverage,
+  onArchive,
   onAddChild,
   toggle,
   trailing,
@@ -324,19 +363,20 @@ function OutlineRow({
   isLast: boolean;
   onEdit: (topic: Topic) => void;
   onNudge: (id: number, delta: number) => void;
-  onDelete: (id: number) => void;
+  onCoverage: (id: number, coverage: TopicCoverage) => void;
+  onArchive: (id: number) => void;
   onAddChild?: () => void;
   toggle: ReactNode;
   trailing?: ReactNode;
 }) {
-  const childCount = topic.children.length;
-
   return (
     <div className="outline__row">
       {toggle}
       <span className="outline__week">{topic.week !== null ? `W${topic.week}` : ""}</span>
       <span className="outline__title">{topic.title}</span>
       {trailing}
+      {topic.coverage === "taught" && <span className="chip chip--ok">Taught</span>}
+      {topic.coverage === "self" && <span className="chip">Self</span>}
       {topic.isOffScheme && <span className="chip">Off scheme</span>}
       {topic.isPreview && <span className="chip chip--accent">Preview</span>}
 
@@ -367,22 +407,129 @@ function OutlineRow({
         <button className="btn" onClick={() => onEdit(topic)}>
           Edit
         </button>
-        <button
-          className="btn btn--danger"
-          aria-label={`Delete ${topic.title}`}
-          onClick={() => {
-            const warning =
-              childCount > 0
-                ? `Delete “${topic.title}” and its ${childCount} subtopic${childCount === 1 ? "" : "s"}?`
-                : `Delete “${topic.title}”?`;
-            if (window.confirm(warning)) onDelete(topic.id);
-          }}
-        >
-          ✕
-        </button>
+        <TopicMenu topic={topic} onCoverage={onCoverage} onArchive={onArchive} />
       </div>
     </div>
   );
+}
+
+/** The per-topic menu: how the student met it, and archiving. */
+function TopicMenu({
+  topic,
+  onCoverage,
+  onArchive,
+}: {
+  topic: Topic;
+  onCoverage: (id: number, coverage: TopicCoverage) => void;
+  onArchive: (id: number) => void;
+}) {
+  const choose = (event: MouseEvent<HTMLButtonElement>, action: () => void) => {
+    event.currentTarget.closest("details")?.removeAttribute("open");
+    action();
+  };
+
+  return (
+    <details className="outline__menu">
+      <summary
+        className="btn outline__menu-button"
+        aria-label={`More actions for ${topic.title}`}
+      >
+        ⋯
+      </summary>
+      <div className="outline__menu-panel">
+        <button
+          className="btn"
+          onClick={(event) => choose(event, () => onCoverage(topic.id, "taught"))}
+        >
+          Taught in class
+        </button>
+        <button
+          className="btn"
+          onClick={(event) => choose(event, () => onCoverage(topic.id, "self"))}
+        >
+          Self-studied
+        </button>
+        <button
+          className="btn"
+          onClick={(event) => choose(event, () => onCoverage(topic.id, "unknown"))}
+        >
+          Not set
+        </button>
+        <button
+          className="btn btn--danger"
+          onClick={(event) => choose(event, () => onArchive(topic.id))}
+        >
+          Archive
+        </button>
+      </div>
+    </details>
+  );
+}
+
+/** What happened in the last few outline updates. */
+function OutlineHistory({ updates }: { updates: OutlineUpdate[] }) {
+  return (
+    <div className="card card--pad outline-history">
+      {updates.map((update) => (
+        <p className="outline-history__row" key={update.id}>
+          <span>{formatDate(update.createdAt)}</span>
+          <span className="muted">
+            {update.added} added · {update.renamed} renamed · {update.moved} moved ·{" "}
+            {update.removed} archived
+          </span>
+        </p>
+      ))}
+    </div>
+  );
+}
+
+/** Topics an update removed. Restorable; permanent deletion lives here only. */
+function ArchivedSection({
+  topics,
+  onRestore,
+  onDelete,
+}: {
+  topics: Topic[];
+  onRestore: (id: number) => void;
+  onDelete: (id: number) => void;
+}) {
+  return (
+    <section className="stack">
+      <span className="label">Archived topics ({topics.length})</span>
+      <div className="card list">
+        {topics.map((topic) => (
+          <div key={topic.id} className="list__item list__item--static">
+            <div className="list__text">
+              <div className="list__title">{topic.title}</div>
+              <div className="list__meta">Hidden from sessions and tests.</div>
+            </div>
+            <button className="btn" onClick={() => onRestore(topic.id)}>
+              Restore
+            </button>
+            <button
+              className="btn btn--danger"
+              onClick={() => {
+                const warning = `Delete “${topic.title}” permanently? Its notes and cards will lose their topic. This cannot be undone.`;
+                if (window.confirm(warning)) onDelete(topic.id);
+              }}
+            >
+              Delete
+            </button>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function formatDate(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "recently";
+  return date.toLocaleDateString(undefined, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
 }
 
 function TopicPrompt({

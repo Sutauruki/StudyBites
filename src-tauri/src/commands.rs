@@ -162,6 +162,32 @@ pub fn topic_nudge(state: State<AppState>, id: i64, delta: i64) -> Ipc<Vec<Topic
     topics::nudge(&mut db, id, delta).map_err(to_ipc)
 }
 
+/// Hide a topic and its subtopics. Notes and cards stay exactly where they are.
+#[tauri::command]
+pub fn topic_archive(state: State<AppState>, id: i64) -> Ipc<Topic> {
+    let db = lock(&state)?;
+    topics::archive(&db, id).map_err(to_ipc)
+}
+
+#[tauri::command]
+pub fn topic_restore(state: State<AppState>, id: i64) -> Ipc<Topic> {
+    let db = lock(&state)?;
+    topics::restore(&db, id).map_err(to_ipc)
+}
+
+#[tauri::command]
+pub fn topics_archived(state: State<AppState>, subject_id: i64) -> Ipc<Vec<Topic>> {
+    let db = lock(&state)?;
+    topics::list_archived(&db, subject_id).map_err(to_ipc)
+}
+
+/// "taught" (in class), "self" (studied alone) or "unknown" (not set).
+#[tauri::command]
+pub fn topic_set_coverage(state: State<AppState>, id: i64, coverage: String) -> Ipc<Topic> {
+    let db = lock(&state)?;
+    topics::set_coverage(&db, id, &coverage).map_err(to_ipc)
+}
+
 // ---- settings -----------------------------------------------------------
 
 #[tauri::command]

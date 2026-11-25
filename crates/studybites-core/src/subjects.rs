@@ -8,7 +8,8 @@ use rusqlite::Row;
 const MAX_NAME: usize = 120;
 
 const SELECT: &str = "SELECT s.id, s.name, s.created_at, s.archived, s.exam_date,
-        (SELECT count(*) FROM scheme_topics t WHERE t.subject_id = s.id) AS topic_count
+        (SELECT count(*) FROM scheme_topics t
+          WHERE t.subject_id = s.id AND t.archived_at IS NULL) AS topic_count
    FROM subjects s";
 
 fn row_to_subject(row: &Row) -> rusqlite::Result<Subject> {

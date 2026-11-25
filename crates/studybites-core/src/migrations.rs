@@ -206,6 +206,31 @@ pub const MIGRATIONS: &[&str] = &[
     );
     CREATE INDEX idx_bug_outbox_created ON bug_outbox(created_at, id);
     "#,
+    // ---- 008: outline updates (roadmap item 5) ---------------------------
+    // A topic dropped by an updated outline is archived, never deleted:
+    // materials, notes and cards reference scheme_topics with ON DELETE SET
+    // NULL, so a delete would silently take the notes and cards off their
+    // topic. `archived_at` hides it while keeping every id and link intact.
+    //
+    // `coverage` is the student's own record of whether the topic was taught
+    // in class or studied alone; it is not inferred from anything.
+    r#"
+    ALTER TABLE scheme_topics ADD COLUMN archived_at TEXT;
+
+    ALTER TABLE scheme_topics ADD COLUMN coverage TEXT NOT NULL DEFAULT 'unknown'
+        CHECK (coverage IN ('unknown','taught','self'));
+
+    CREATE TABLE outline_updates (
+        id         INTEGER PRIMARY KEY,
+        subject_id INTEGER NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
+        created_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        added      INTEGER NOT NULL,
+        removed    INTEGER NOT NULL,
+        renamed    INTEGER NOT NULL,
+        moved      INTEGER NOT NULL
+    );
+    CREATE INDEX idx_outline_updates_subject ON outline_updates(subject_id, created_at);
+    "#,
 ];
 
 pub const SCHEMA_VERSION: i64 = MIGRATIONS.len() as i64;

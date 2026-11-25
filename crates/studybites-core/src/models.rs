@@ -24,8 +24,18 @@ pub struct Topic {
     pub is_off_scheme: bool,
     pub supports_topic_id: Option<i64>,
     pub is_preview: bool,
+    /// When an outline update archived this topic; hidden while it is set.
+    #[serde(default)]
+    pub archived_at: Option<String>,
+    /// "unknown", "taught" (in class) or "self" (studied alone).
+    #[serde(default = "default_coverage")]
+    pub coverage: String,
     /// Direct children, ordered by position. Phase 1 nests one level deep.
     pub children: Vec<Topic>,
+}
+
+pub fn default_coverage() -> String {
+    "unknown".to_string()
 }
 
 /// Input for creating a topic.

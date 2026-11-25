@@ -192,6 +192,23 @@ On supported Android devices, Settings can enable Do Not Disturb during study.
 Priority only is the default, so alarms and priority contacts can still ring;
 StudyBites restores your previous mode when the session ends.
 
+### When the outline changes
+
+If your lecturer hands out a revised scheme of work, import it again. Because
+the subject already has topics, StudyBites compares the new outline with the
+stored one and shows what changed: added, renamed, moved, removed and restored.
+Tick what you want and choose **Apply update**.
+
+Nothing is deleted by an update. A dropped topic is archived instead, so its
+notes and cards stay exactly where they were, and **Restore** brings it back.
+Renamed and moved topics keep their id, so they are still the same topic and
+your progress stays with them. If the parser reads one topic under two different
+names, use **Same as…** on the removed row to pair it with the added one.
+
+Each topic's menu also records **Taught in class** or **Self-studied** — a small
+badge then shows on the row — and the line above the outline shows when it was
+last updated.
+
 ### Other things it does
 
 - **Ask about a subject** — answers come only from your own uploaded notes for

@@ -11,6 +11,7 @@ use base64::Engine as _;
 use std::sync::MutexGuard;
 use studybites_core::ai::{AiProvider, ProviderId, SchemeEntry, TopicMatch};
 use studybites_core::embed::{Embedder, LexicalEmbedder};
+use studybites_core::outline::{self, OutlineDecisions, OutlineDiff, OutlineUpdate};
 use studybites_core::providers::{Attempt, Http, Provider, UreqGetHttp, UreqHttp};
 use studybites_core::{
     bugreport, files, ingest, jobs, library, marking, preview, quota, study, subjects, update, Db,
@@ -514,6 +515,37 @@ pub fn scheme_save(
 ) -> Ipc<Vec<Topic>> {
     let db = lock(&state)?;
     ingest::save_scheme(&db, subject_id, &entries).map_err(to_ipc)
+}
+
+/// What changed between the stored outline and an imported one.
+///
+/// Pure and offline: the parsed entries arrive from the AI step above, and the
+/// comparison itself never calls a provider.
+#[tauri::command]
+pub fn outline_diff(
+    state: State<AppState>,
+    subject_id: i64,
+    entries: Vec<SchemeEntry>,
+) -> Ipc<OutlineDiff> {
+    let db = lock(&state)?;
+    outline::diff_outline(&db, subject_id, &entries).map_err(to_ipc)
+}
+
+/// Apply the changes the student kept, in one transaction.
+#[tauri::command]
+pub fn outline_apply(
+    state: State<AppState>,
+    subject_id: i64,
+    decisions: OutlineDecisions,
+) -> Ipc<Vec<Topic>> {
+    let mut db = lock(&state)?;
+    outline::apply_outline_update(&mut db, subject_id, &decisions).map_err(to_ipc)
+}
+
+#[tauri::command]
+pub fn outline_history(state: State<AppState>, subject_id: i64) -> Ipc<Vec<OutlineUpdate>> {
+    let db = lock(&state)?;
+    outline::history(&db, subject_id).map_err(to_ipc)
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
