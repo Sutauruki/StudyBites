@@ -1226,24 +1226,28 @@ fn retrieve_notes_returns_material_pages_null_old_notes_and_preview_labels() {
 
     let pdf_mat = library::material_create(
         &db,
-        bio.id,
-        Some(topic.id),
-        "Biology.pdf",
-        "application/pdf",
-        100,
-        "hash-pdf",
-        "cold-pdf",
+        &library::NewMaterial {
+            subject_id: bio.id,
+            topic_id: Some(topic.id),
+            original_filename: "Biology.pdf",
+            mime: "application/pdf",
+            size: 100,
+            sha256: "hash-pdf",
+            cold_path: Some("cold-pdf"),
+        },
     )
     .unwrap();
     let old_mat = library::material_create(
         &db,
-        bio.id,
-        Some(topic.id),
-        "OldHandout.pdf",
-        "application/pdf",
-        100,
-        "hash-old",
-        "cold-old",
+        &library::NewMaterial {
+            subject_id: bio.id,
+            topic_id: Some(topic.id),
+            original_filename: "OldHandout.pdf",
+            mime: "application/pdf",
+            size: 100,
+            sha256: "hash-old",
+            cold_path: Some("cold-old"),
+        },
     )
     .unwrap();
 
