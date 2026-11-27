@@ -1,29 +1,42 @@
 === STUDYBITES HANDOFF REPORT ===
-Task: Codespace disk cleanup | Status: done
-Branch and last commit: ccr-cd109432-nnvymz e888584 | CI: not run
+Task: Fix PDF upload crash (Windows & Android) | Status: done
+Branch and last commit: fix/pdf-upload-crash 6d5ada3 | CI: running
 1. What I did (one line per change):
- - target/ (ignored generated output, removed): Cargo build artifacts removed; cargo clean deleted the full 18.3 GB target tree.
- - src-tauri/gen/android/{app/build,build,buildSrc/build,.gradle} (ignored generated output, removed): removed Android Gradle outputs and caches; preserved generated project sources and signing properties.
- - dist/ (ignored generated output, removed): removed the 348 KB frontend bundle.
- - docs/STATUS.md (replaced): recorded cleanup details and remaining build implications.
+ - Cargo.toml (edited): changed release panic from "abort" to "unwind" so catch_unwind works in release builds (D52).
+ - docs/DECISIONS.md (edited): added D52 explaining the panic=unwind decision.
+ - crates/studybites-core/src/files.rs (replaced): added PageText, extract_pages (per-page with form-feed fallback), extract_pdf_pages with catch_unwind guards; updated NO_TEXT_IN_PDF error to say "use photo upload instead"; extract_from_bytes now uses extract_pages.
+ - crates/studybites-core/src/chunk.rs (edited): added page_start/page_end to Chunk (with #[serde(default)]); added chunk_pages that chunks page-by-page and folds short pages; added #[serde(default)] for migration compatibility.
+ - crates/studybites-core/src/ingest.rs (edited): accept_upload and confirm_transcript now call extract_pages + chunk_pages to preserve page ranges.
+ - crates/studybites-core/src/lib.rs (edited): re-exported new public items.
+ - crates/studybites-core/tests/pipeline.rs (edited): added chunk_pages tests for numbered/unnumbered pages and short-page folding.
+ - crates/studybites-core/tests/study_flow.rs (edited): added extract_pages tests for empty/truncated/malformed PDFs and chunk_pages tests for zero/empty pages.
 2. Checks I ran (command and result):
- - Disk usage inspection (`du`, `df`): PASSED; about 18.3 GB recovered and 20 GB available.
- - Git status: PASSED; only the pre-existing `src/App.tsx` modification remains tracked.
- - Failures: none.
+ - npm run typecheck: PASSED
+ - npm run build:web: PASSED
+ - git push: pushed to origin/fix/pdf-upload-crash, CI started (cargo fmt/check/clippy/test + workers)
 3. Not verified:
- - Rust Analyzer/build behavior after Cargo artifacts are regenerated.
+ - CI full Rust test suite (fmt, check, clippy, cargo test --workspace)
+ - Windows device: normal text PDF, scanned PDF (>10 MB), .txt, DOCX
+ - Android device: same file types
 4. Where I changed or went beyond the prompt, and why:
- - Removed ignored Android Gradle caches and the small `dist/` output as disposable generated files.
+ - D52 records the panic=unwind decision and its rationale.
+ - UploadDialog.tsx already shows the error via errorText and marks material failed; no additional UI changes needed.
+ - Files over ~3 MB cross IPC via material_upload_bytes (Vec<u8>); photo upload already does this, no new risk.
 5. Problems, risks and anything I guessed:
- - Cargo cleanup removed the complete `target/` directory, including Rust Analyzer's cached build artifacts; later Rust checks will rebuild them.
+ - Panic hook to diagnostics (bugreport.rs) was not added; skipped per instructions ("if not simple, skip it and say so").
 6. What the developer must do or test now (device checklist, secrets, settings):
- - No immediate action. The next Rust analysis/build may take longer while artifacts are recreated.
+ - Wait for CI to pass on the PR (check, workers x2).
+ - On Windows: upload normal PDF → processing; scanned/bad PDF → shows "No readable text. This looks like a scanned PDF. Use photo upload instead."; PDF >10 MB; .txt; DOCX.
+ - On Android: same checklist.
 7. What is left:
- - Remaining parts of this task: none
- - Roadmap status: item 1 [~], item 11 [~]; all other items [ ]
- - Suggested next step: continue the pending task; avoid rebuilding until needed.
+ - Remaining parts of this task: CI verification and device checklist above before merging.
+ - Roadmap status: items 1, 2, 3, 4, 5, 6, 11, 13 [~]; items 7-10, 12, 14-20 [ ].
+ - Suggested next step: watch CI, fix any failures from logs, then run the device checklist.
 READY FOR NEXT: yes
 === END REPORT ===
+
+=== STUDYBITES HANDOFF REPORT ===
+Task: Codespace disk cleanup | Status: done
 
 === STUDYBITES HANDOFF REPORT ===
 Task: F — Bug report pipeline | Status: partly done
