@@ -100,7 +100,9 @@ pub fn accept_upload(
         },
     )?;
 
-    let chunks = chunk::chunk_text(&extracted.text);
+    // Extract pages first, then chunk them to get page ranges.
+    let pages = crate::files::extract_pages(&bytes, extracted.kind)?;
+    let chunks = crate::chunk::chunk_pages(&pages);
     if chunks.is_empty() {
         library::material_set_status(
             db,
@@ -249,17 +251,14 @@ pub fn confirm_transcript(db: &mut Db, material_id: i64) -> Result<usize> {
             "Wait until every page has a transcript before confirming.".into(),
         ));
     }
-    let mut text = String::new();
-    for page in &pages {
-        if !text.is_empty() {
-            text.push_str("\n\n");
-        }
-        text.push_str(&format!("Page {}\n", page.page_index + 1));
-        if let Some(transcript) = &page.transcript {
-            text.push_str(transcript);
-        }
-    }
-    let chunks = chunk::chunk_text(&text);
+    let page_texts: Vec<crate::files::PageText> = pages
+        .into_iter()
+        .map(|page| crate::files::PageText {
+            page: Some(page.page_index as u32 + 1),
+            text: page.transcript.expect("checked above"),
+        })
+        .collect();
+    let chunks = crate::chunk::chunk_pages(&page_texts);
     if chunks.is_empty() {
         return Err(CoreError::Invalid(
             "Add readable text to at least one page before confirming.".into(),

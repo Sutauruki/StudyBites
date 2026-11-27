@@ -9,6 +9,7 @@
 //! much text goes into one AI request. Roughly four characters per token is
 //! close enough for English prose and formulas.
 
+use crate::files::PageText;
 use serde::{Deserialize, Serialize};
 
 pub const TARGET_TOKENS: usize = 450;
@@ -30,6 +31,13 @@ pub struct Chunk {
     pub heading: Option<String>,
     pub text: String,
     pub estimated_tokens: usize,
+    /// First and last page this chunk's text came from, 1-based, when the
+    /// document has pages. `None` for DOCX and plain text, and for notes made
+    /// before page references existed — both show the material name only.
+    #[serde(default)]
+    pub page_start: Option<u32>,
+    #[serde(default)]
+    pub page_end: Option<u32>,
 }
 
 /// A paragraph or heading, as found in the source.
@@ -171,6 +179,8 @@ fn push_chunk(chunks: &mut Vec<Chunk>, heading: &Option<String>, buffer: &mut St
             heading: heading.clone(),
             estimated_tokens: estimate_tokens(body),
             text: body.to_string(),
+            page_start: None,
+            page_end: None,
         });
     }
     buffer.clear();
@@ -235,6 +245,62 @@ pub fn chunk_text(text: &str) -> Vec<Chunk> {
             prev.text.push_str("\n\n");
             prev.text.push_str(&last.text);
             prev.estimated_tokens = estimate_tokens(&prev.text);
+        }
+    }
+
+    chunks
+}
+
+/// Split extracted pages into chunks, tagging each with the page it came from.
+///
+/// Chunking runs one page at a time. A page break is a natural topic break in a
+/// handout or textbook, and it is what makes the citation exact: a chunk that
+/// straddled two pages could only ever say "pages 3–4", which is a worse answer
+/// than "page 3" for the student checking a claim. Within a page the algorithm
+/// is unchanged, so a DOCX or text file (one unnumbered page) chunks exactly as
+/// `chunk_text` would.
+///
+/// A page too short to fill a chunk on its own is folded into the chunk before
+/// it, because a 20-token page still costs a whole AI request. The chunk then
+/// carries a range, which is why the range exists at all.
+pub fn chunk_pages(pages: &[PageText]) -> Vec<Chunk> {
+    let mut chunks: Vec<Chunk> = Vec::new();
+
+    for page in pages {
+        let page_chunks = chunk_text(&page.text);
+        if page_chunks.is_empty() {
+            continue;
+        }
+        let page_tokens: usize = page_chunks.iter().map(|c| c.estimated_tokens).sum();
+        // Only fold a numbered page into a numbered chunk: mixing a page number
+        // with an unnumbered document would make the citation a lie.
+        let fold_into_previous = page_tokens < MIN_TOKENS
+            && chunks
+                .last()
+                .is_some_and(|prev| prev.page_end.is_some() == page.page.is_some());
+
+        if fold_into_previous {
+            let prev = chunks.last_mut().expect("checked above");
+            for chunk in page_chunks {
+                prev.text.push_str("\n\n");
+                prev.text.push_str(&chunk.text);
+            }
+            prev.estimated_tokens = estimate_tokens(&prev.text);
+            if let Some(number) = page.page {
+                prev.page_end = Some(number);
+            }
+            continue;
+        }
+
+        for chunk in page_chunks {
+            chunks.push(Chunk {
+                index: chunks.len(),
+                heading: chunk.heading,
+                text: chunk.text,
+                estimated_tokens: chunk.estimated_tokens,
+                page_start: page.page,
+                page_end: page.page,
+            });
         }
     }
 

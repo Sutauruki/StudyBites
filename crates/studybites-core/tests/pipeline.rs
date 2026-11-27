@@ -1,8 +1,9 @@
 //! Phase 2 foundations: chunking, AI response parsing, the job queue, quota.
 
 use studybites_core::ai::{self, AiError, GeneratedCard, ProviderId};
-use studybites_core::chunk::{chunk_text, estimate_tokens, MAX_TOKENS};
+use studybites_core::chunk::{chunk_text, chunk_pages, estimate_tokens, MAX_TOKENS};
 use studybites_core::db::DEV_KEY;
+use studybites_core::files::PageText;
 use studybites_core::providers::Provider;
 use studybites_core::{jobs, quota, Db, JobStatus};
 
@@ -103,6 +104,44 @@ fn chunking_does_not_split_multibyte_characters() {
     for chunk in &chunks {
         assert!(chunk.text.chars().count() > 0);
     }
+}
+
+#[test]
+fn chunk_pages_handles_numbered_and_unnumbered() {
+    use crate::chunk::Chunk;
+
+    // Unnumbered pages (DOCX/Text)
+    let unnumbered = vec![
+        PageText { page: None, text: "First paragraph.\n\nSecond.".to_string() },
+    ];
+    let chunks = chunk_pages(&unnumbered);
+    assert!(!chunks.is_empty());
+    assert!(chunks[0].page_start.is_none());
+    assert!(chunks[0].page_end.is_none());
+
+    // Numbered pages with page ranges
+    let numbered = vec![
+        PageText { page: Some(1), text: "Page one content.".repeat(20) },
+        PageText { page: Some(2), text: "Page two content.".repeat(20) },
+    ];
+    let chunks = chunk_pages(&numbered);
+    assert!(!chunks.is_empty());
+    for chunk in &chunks {
+        assert!(chunk.page_start.is_some());
+        assert!(chunk.page_end.is_some());
+    }
+}
+
+#[test]
+fn chunk_pages_folds_short_numbered_page_into_previous() {
+    // Page 2 is too short on its own; it should be folded into page 1's chunk
+    let pages = vec![
+        PageText { page: Some(1), text: "Page one has enough text. ".repeat(30) },
+        PageText { page: Some(2), text: "Short." },
+    ];
+    let chunks = chunk_pages(&pages);
+    // Should have at least one chunk spanning pages 1-2
+    assert!(chunks.iter().any(|c| c.page_start == Some(1) && c.page_end == Some(2)));
 }
 
 // ---- AI response parsing ------------------------------------------------

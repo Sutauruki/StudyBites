@@ -2,9 +2,11 @@
 //! update check, and the end-to-end upload → cards → study → tomorrow path.
 
 use studybites_core::ai::{AiError, DistillRequest, DistilledNote, GeneratedCard, ProviderId};
+use studybites_core::chunk::{chunk_pages, Chunk};
 use studybites_core::crypto;
 use studybites_core::db::DEV_KEY;
 use studybites_core::embed::{self, Embedder, LexicalEmbedder};
+use studybites_core::files::{extract_pages, FileKind, PageText};
 use studybites_core::fsrs::{self, Memory, Rating, State};
 use studybites_core::providers::{Attempt, Http, HttpError, Provider};
 use studybites_core::{
@@ -206,6 +208,87 @@ fn plain_text_extraction_tidies_whitespace_and_rejoins_words() {
     );
     assert!(!extracted.text.contains("   "), "runs of spaces collapse");
     assert_eq!(extracted.sha256.len(), 64);
+}
+
+#[test]
+fn extract_pages_returns_pages_for_pdf_text_docx() {
+    use crate::files::{extract_pages, FileKind};
+
+    // Plain text: one unnumbered page
+    let text = "Paragraph one.\n\nParagraph two.";
+    let pages = extract_pages(text.as_bytes(), FileKind::Text).unwrap();
+    assert_eq!(pages.len(), 1);
+    assert_eq!(pages[0].page, None);
+    assert!(pages[0].text.contains("Paragraph one"));
+
+    // DOCX: one unnumbered page (synthesised)
+    let mut bytes = std::io::Cursor::new(Vec::new());
+    {
+        let mut archive = zip::ZipWriter::new(&mut bytes);
+        archive
+            .start_file(
+                "word/document.xml",
+                zip::write::FileOptions::<()>::default(),
+            )
+            .unwrap();
+        write!(
+            archive,
+            r#"<w:document><w:body><w:p><w:r><w:t>DOCX text</w:t></w:r></w:p></w:body></w:document>"#
+        )
+        .unwrap();
+        archive.finish().unwrap();
+    }
+    let pages = extract_pages(&bytes.into_inner(), FileKind::Docx).unwrap();
+    assert_eq!(pages.len(), 1);
+    assert_eq!(pages[0].page, None);
+    assert!(pages[0].text.contains("DOCX text"));
+}
+
+#[test]
+fn extract_pages_handles_empty_and_truncated_pdf() {
+    use crate::files::{extract_pages, FileKind};
+
+    // Empty bytes
+    assert!(extract_pages(b"", FileKind::Pdf).is_err());
+
+    // Random bytes (not a PDF)
+    assert!(extract_pages(b"not a pdf", FileKind::Pdf).is_err());
+
+    // Minimal PDF header plus junk - extract_pdf will catch the panic/err and return friendly error
+    let pdfish = b"%PDF-1.4\n%junk";
+    let result = extract_pages(pdfish, FileKind::Pdf);
+    assert!(result.is_err(), "should fail gracefully on malformed PDF");
+}
+
+#[test]
+fn chunk_pages_handles_zero_and_empty_pages() {
+    use crate::files::PageText;
+    use crate::chunk::chunk_pages;
+
+    // Zero pages - should return empty vec
+    let chunks = chunk_pages(&[]);
+    assert!(chunks.is_empty());
+
+    // All empty pages - should be filtered out
+    let pages = vec![
+        PageText { page: Some(1), text: "".to_string() },
+        PageText { page: Some(2), text: "   \n\n ".to_string() },
+        PageText { page: Some(3), text: "\t".to_string() },
+    ];
+    let chunks = chunk_pages(&pages);
+    assert!(chunks.is_empty(), "all-empty pages should yield no chunks");
+
+    // Mixed: one page with content, others empty
+    let pages = vec![
+        PageText { page: Some(1), text: "".to_string() },
+        PageText { page: Some(2), text: "Real content here." },
+        PageText { page: Some(3), text: "   ".to_string() },
+    ];
+    let chunks = chunk_pages(&pages);
+    assert_eq!(chunks.len(), 1);
+    assert_eq!(chunks[0].page_start, Some(2));
+    assert_eq!(chunks[0].page_end, Some(2));
+    assert!(chunks[0].text.contains("Real content"));
 }
 
 #[test]

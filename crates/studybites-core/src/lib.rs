@@ -32,12 +32,13 @@ pub mod topics;
 pub mod update;
 
 pub use ai::{AiError, AiProvider, DistilledNote, GeneratedCard, ProviderId};
-pub use chunk::{chunk_text, Chunk};
+pub use chunk::{chunk_text, chunk_pages, Chunk};
 pub use crypto::{DeviceKeys, SecretKey};
 pub use db::{Db, Key};
 pub use device::DeviceProfile;
 pub use embed::{Embedder, LexicalEmbedder};
 pub use error::{CoreError, Result};
+pub use files::{extract_pages, extract_from_bytes, FileKind, PageText, MAX_FILE_BYTES};
 pub use fsrs::{Memory, Rating, State};
 pub use jobs::{Job, JobStatus};
 pub use license::{License, VerifiedLicense};

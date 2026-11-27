@@ -503,3 +503,17 @@ This does not independently bind a request to the activation code's device
 fingerprint. Cloudflare KV increments are not atomic, and usage is recorded
 before the upstream call; the counters are best-effort limits, not billing
 records. A later web version with accounts and subscriptions remains separate.
+
+### D52. Release panic = "unwind" so catch_unwind works
+
+The workspace used `panic = "abort"` in the release profile, which makes
+`std::panic::catch_unwind` a no-op in release builds. PDF extraction via
+`pdf-extract` can panic on some malformed files rather than returning an
+error, and a panic in a release build with `abort` closes the whole app
+silently. Changing to `panic = "unwind"` keeps LTO, stripping and opt-level
+while allowing `catch_unwind` to catch panics in the PDF path and convert
+them to a friendly `CoreError::Invalid` instead of a crash. This was needed
+to fix "app quits when a PDF is uploaded" (D50 already documents the
+extraction fallback; the panic handler makes it survive release builds).
+
+### D44. Each Worker owns its vitest config, and CI tests Workers separately
